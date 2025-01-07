@@ -85,6 +85,22 @@ mod player {
             }
         }
 
+        fn end_of_current_album(&self) -> Option<NonNull<Element>> {
+            let option_play_album = unsafe { self.current.as_ref().map(|element| &element.as_ref().song.album) };
+            match option_play_album {
+                None => { None },
+                Some(play_album) => unsafe {
+                    let mut last_element_of_album = self.current;
+                    while let Some(element_album) = last_element_of_album.as_ref().map(|element| element.as_ref().next)?.as_ref().map(|element| &element.as_ref().song.album) {
+                        if play_album != element_album { break }
+                        last_element_of_album = last_element_of_album.as_ref().map(|element| element.as_ref().next)?;
+                    }
+                    
+                    last_element_of_album
+                },
+            }
+        }
+
 
 
         pub fn add_song_after_current(&mut self, new_song: Song<'q>) {
@@ -156,11 +172,67 @@ mod player {
             let new_element = Box::new(Element::new(new_song));
             let new_element_ptr = NonNull::from(Box::leak(new_element));
             unsafe {
-                self.add_element_block_after_album(new_element_ptr);
+                self.add_element_block_after_album(new_element_ptr, new_element_ptr, 1);
             }
         }
-        unsafe fn add_element_block_after_album(&mut self, new_element: NonNull<Element<'q>>) {
+        pub fn add_song_block_after_album(&mut self, mut new_songs: Vec<Song<'q>>) {
+            new_songs.reverse();
+            let len_block = new_songs.len() as i32;
+            let start_block_song = new_songs.pop().expect("new_songs vec should always contain at least 1 song");
+            let start_block_element = Box::new(Element::new(start_block_song));
+            let start_block_element_ptr = NonNull::from(Box::leak(start_block_element));
+            let end_block_element_ptr = {
+                let mut current_block_element_ptr = start_block_element_ptr;
+                let mut option_current_song = new_songs.pop();
+                while let Some(current_song) = option_current_song {
+                    let previous_block_element_ptr = current_block_element_ptr;
+                    let current_block_element = Box::new(Element::new(current_song));
+                    current_block_element_ptr = NonNull::from(Box::leak(current_block_element));
+                    unsafe {
+                        (*previous_block_element_ptr.as_ptr()).next = Some(current_block_element_ptr);
+                        (*current_block_element_ptr.as_ptr()).prev = Some(previous_block_element_ptr);
+                    }
+                    option_current_song = new_songs.pop();
+                }
+                current_block_element_ptr
+            };
             unsafe {
+                self.add_element_block_after_album(start_block_element_ptr, end_block_element_ptr, len_block);
+            }
+        }
+        unsafe fn add_element_block_after_album(&mut self, start_block_element: NonNull<Element<'q>>, end_block_element: NonNull<Element<'q>>, len_block: i32) {
+            unsafe {
+                let self_current_album = self.end_of_current_album();
+                match self_current_album {
+                    None => {
+                        let start_block_element = Some(start_block_element);
+                        let end_block_element = Some(end_block_element);
+                        self.start = start_block_element;
+                        self.current = start_block_element;
+                        self.end = end_block_element;
+                    },
+                    Some(current_album) => {
+                        let self_next_album = (*current_album.as_ptr()).next;
+                        (*start_block_element.as_ptr()).prev = self_current_album;
+                        match self_next_album {
+                            None => {
+                                let start_block_element = Some(start_block_element);
+                                (*current_album.as_ptr()).next = start_block_element;
+                                let end_block_element = Some(end_block_element);
+                                self.end = end_block_element;
+                            }
+                            Some(next_album) => {
+                                let start_block_element = Some(start_block_element);
+                                (*current_album.as_ptr()).next = start_block_element;
+                                (*end_block_element.as_ptr()).next = self_next_album;
+                                let end_block_element = Some(end_block_element);
+                                (*next_album.as_ptr()).prev = end_block_element;
+                            }
+                        }
+                    },
+                }
+
+                self.len_queue += len_block;
             }
         }
 
@@ -257,9 +329,11 @@ mod player {
 
 
 fn main() {
-    let song_one = Song { title: "title 1", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 1") };
-    let song_two = Song { title: "title 2", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 2") };
-    let song_three = Song { title: "title 3", album: "Album 3", artist: "Artist 3", link: Link::Spotify("Spotify Link 3") };
+    let song_one = Song { title: "track 1", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 1") };
+    let song_two = Song { title: "track 2", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 2") };
+    let song_three = Song { title: "track 3", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 3") };
+    let song_four = Song { title: "track 4", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 4") };
+    let song_five = Song { title: "track 5", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 5") };
     //println!("Song: {:?}", song_one);
     /*
     let mut queue = player::Queue::new();
@@ -326,11 +400,21 @@ fn main() {
     println!("song_three, {:?}", queue.relative_song(1));
     println!("song_two, {:?}", queue.relative_song(2));
 */
-    let vec = vec![song_one, song_two, song_three];
+    let vec1 = vec![song_one, song_two, song_three];
     let mut queue = player::Queue::new();
-    queue.add_song_block_after_current(vec);
+    queue.add_song_block_after_current(vec1);
+    /*
+    queue.add_song_after_album(song_four);
+    queue.add_song_after_album(song_five);
+    */
+    let vec2 = vec![song_four, song_five];
+    queue.add_song_block_after_album(vec2);
 
     println!("song_one, {:?}", queue.current_song());
     println!("song_two, {:?}", queue.relative_song(1));
-    println!("song_three, {:?}", queue.end_song());
+    println!("song_two, {:?}", queue.relative_song(2));
+    println!("song_four, {:?}", queue.end_song());
+    println!("song_five {:?}", queue.relative_song(3));
+    println!("song_four {:?}", queue.relative_song(4));
+    println!("after queue {:?}", queue.relative_song(5));
 }
