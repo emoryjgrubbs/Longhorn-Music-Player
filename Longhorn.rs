@@ -87,81 +87,133 @@ mod player {
 
 
 
-        pub fn add_after_song(&mut self, new_song: Song<'q>) {
+        pub fn add_song_after_current(&mut self, new_song: Song<'q>) {
             let new_element = Box::new(Element::new(new_song));
             let new_element_ptr = NonNull::from(Box::leak(new_element));
             unsafe {
-                self.add_element_after_song(new_element_ptr);
+                self.add_element_block_after_current(new_element_ptr, new_element_ptr, 1);
             }
         }
-        unsafe fn add_element_after_song(&mut self, new_element: NonNull<Element<'q>>) {
+        pub fn add_song_block_after_current(&mut self, mut new_songs: Vec<Song<'q>>) {
+            new_songs.reverse();
+            let len_block = new_songs.len() as i32;
+            let start_block_song = new_songs.pop().expect("new_songs vec should always contain at least 1 song");
+            let start_block_element = Box::new(Element::new(start_block_song));
+            let start_block_element_ptr = NonNull::from(Box::leak(start_block_element));
+            let end_block_element_ptr = {
+                let mut current_block_element_ptr = start_block_element_ptr;
+                let mut option_current_song = new_songs.pop();
+                while let Some(current_song) = option_current_song {
+                    let previous_block_element_ptr = current_block_element_ptr;
+                    let current_block_element = Box::new(Element::new(current_song));
+                    current_block_element_ptr = NonNull::from(Box::leak(current_block_element));
+                    unsafe {
+                        (*previous_block_element_ptr.as_ptr()).next = Some(current_block_element_ptr);
+                        (*current_block_element_ptr.as_ptr()).prev = Some(previous_block_element_ptr);
+                    }
+                    option_current_song = new_songs.pop();
+                }
+                current_block_element_ptr
+            };
+            unsafe {
+                self.add_element_block_after_current(start_block_element_ptr, end_block_element_ptr, len_block);
+            }
+        }
+        unsafe fn add_element_block_after_current(&mut self, start_block_element: NonNull<Element<'q>>, end_block_element: NonNull<Element<'q>>, len_block: i32) {
             unsafe {
                 match self.current {
                     None => {
-                        let new_element = Some(new_element);
-                        self.start = new_element;
-                        self.current = new_element;
-                        self.end = new_element;
+                        let start_block_element = Some(start_block_element);
+                        let end_block_element = Some(end_block_element);
+                        self.start = start_block_element;
+                        self.current = start_block_element;
+                        self.end = end_block_element;
                     },
                     Some(current) => {
                         let self_next = (*current.as_ptr()).next;
-                        (*new_element.as_ptr()).prev = self.current;
+                        (*start_block_element.as_ptr()).prev = self.current;
                         match self_next {
                             None => {
-                                let new_element = Some(new_element);
-                                (*current.as_ptr()).next = new_element;
-                                self.end = new_element;
+                                let end_block_element = Some(end_block_element);
+                                self.end = end_block_element;
                             }
                             Some(next) => {
-                                (*new_element.as_ptr()).next = self_next;
-                                let new_element = Some(new_element);
-                                (*current.as_ptr()).next = new_element;
-                                (*next.as_ptr()).prev = new_element;
+                                (*end_block_element.as_ptr()).next = self_next;
+                                let end_block_element = Some(end_block_element);
+                                (*next.as_ptr()).prev = end_block_element;
                             }
                         }
+                        let start_block_element = Some(start_block_element);
+                        (*current.as_ptr()).next = start_block_element;
                     },
                 }
 
-                self.len_queue += 1;
+                self.len_queue += len_block;
             }
         }
 
-        pub fn add_after_album(&mut self, new_song: Song<'q>) {
+        pub fn add_song_after_album(&mut self, new_song: Song<'q>) {
             let new_element = Box::new(Element::new(new_song));
             let new_element_ptr = NonNull::from(Box::leak(new_element));
             unsafe {
-                self.add_element_after_album(new_element_ptr);
+                self.add_element_block_after_album(new_element_ptr);
             }
         }
-        unsafe fn add_element_after_album(&mut self, new_element: NonNull<Element<'q>>) {
+        unsafe fn add_element_block_after_album(&mut self, new_element: NonNull<Element<'q>>) {
             unsafe {
             }
         }
 
-        pub fn add_after_queue(&mut self, new_song: Song<'q>) {
+        pub fn add_song_after_queue(&mut self, new_song: Song<'q>) {
             let new_element = Box::new(Element::new(new_song));
             let new_element_ptr = NonNull::from(Box::leak(new_element));
             unsafe {
-                self.add_element_after_queue(new_element_ptr);
+                self.add_element_block_after_queue(new_element_ptr, new_element_ptr, 1);
             }
         }
-        unsafe fn add_element_after_queue(&mut self, new_element: NonNull<Element<'q>>) {
+        pub fn add_song_block_after_queue(&mut self, mut new_songs: Vec<Song<'q>>) {
+            new_songs.reverse();
+            let len_block = new_songs.len() as i32;
+            let start_block_song = new_songs.pop().expect("new_songs vec should always contain at least 1 song");
+            let start_block_element = Box::new(Element::new(start_block_song));
+            let start_block_element_ptr = NonNull::from(Box::leak(start_block_element));
+            let end_block_element_ptr = {
+                let mut current_block_element_ptr = start_block_element_ptr;
+                let mut option_current_song = new_songs.pop();
+                while let Some(current_song) = option_current_song {
+                    let previous_block_element_ptr = current_block_element_ptr;
+                    let current_block_element = Box::new(Element::new(current_song));
+                    current_block_element_ptr = NonNull::from(Box::leak(current_block_element));
+                    unsafe {
+                        (*previous_block_element_ptr.as_ptr()).next = Some(current_block_element_ptr);
+                        (*current_block_element_ptr.as_ptr()).prev = Some(previous_block_element_ptr);
+                    }
+                    option_current_song = new_songs.pop();
+                }
+                current_block_element_ptr
+            };
             unsafe {
-                (*new_element.as_ptr()).prev = self.end;
-                let new_element = Some(new_element);
+                self.add_element_block_after_queue(start_block_element_ptr, end_block_element_ptr, len_block);
+            }
+        }
+        unsafe fn add_element_block_after_queue(&mut self, start_block_element: NonNull<Element<'q>>, end_block_element: NonNull<Element<'q>>, len_block: i32) {
+            unsafe {
+                (*start_block_element.as_ptr()).prev = self.end;
+                let start_block_element = Some(start_block_element);
+                let end_block_element = Some(end_block_element);
 
                 match self.end {
                     None => {
-                        self.start = new_element;
-                        self.current = new_element;
+                        self.start = start_block_element;
+                        self.current = start_block_element;
                     },
                     Some(end) => {
-                        (*end.as_ptr()).next = new_element;
+                        (*end.as_ptr()).next = start_block_element;
                     },
                 }
 
-                self.end = new_element;
-                self.len_queue += 1;
+                self.end = end_block_element;
+                self.len_queue += len_block;
             }
         }
 
@@ -248,10 +300,11 @@ fn main() {
     //let current_song = queue.get_current_song();
     //println!("{:?}", queue.get_current_song());
     */
+/*
     let mut queue = player::Queue::new();
-    queue.add_after_song(song_one);
-    queue.add_after_song(song_two);
-    queue.add_after_song(song_three);
+    queue.add_song_after_current(song_one);
+    queue.add_song_after_current(song_two);
+    queue.add_song_after_current(song_three);
     println!("{:?}", queue.current_song());
     queue.advance_song();
     println!();
@@ -272,4 +325,12 @@ fn main() {
     println!("song_one, {:?}", queue.relative_song(0));
     println!("song_three, {:?}", queue.relative_song(1));
     println!("song_two, {:?}", queue.relative_song(2));
+*/
+    let vec = vec![song_one, song_two, song_three];
+    let mut queue = player::Queue::new();
+    queue.add_song_block_after_current(vec);
+
+    println!("song_one, {:?}", queue.current_song());
+    println!("song_two, {:?}", queue.relative_song(1));
+    println!("song_three, {:?}", queue.end_song());
 }
