@@ -26,6 +26,7 @@ mod player {
 
     #[derive(Debug, Clone)]
     pub struct Queue<'a> {
+        max_history: i32,
         len_history: i32,
         len_queue: i32,
         start: Option<NonNull<Element<'a>>>,
@@ -34,11 +35,18 @@ mod player {
     }
 
     impl<'q> Queue<'q> {
-        pub fn new() -> Queue<'q> {
-            Queue { len_history: 0, len_queue: 0, start: None, current: None, end: None }
+        pub fn new(max_history: i32) -> Queue<'q> {
+            Queue { max_history: max_history, len_history: 0, len_queue: 0, start: None, current: None, end: None }
         }
 
 
+
+        pub fn set_max(&mut self, new_max_history: i32) {
+            self.max_history = new_max_history;
+        }
+        pub fn test_max(&self) -> i32 {
+            self.max_history
+        }
 
         pub fn start_song(&self) -> Option<&Song> {
             unsafe { self.start.as_ref().map(|element| &element.as_ref().song) }
@@ -100,8 +108,6 @@ mod player {
                 },
             }
         }
-
-
 
         pub fn add_song_after_current(&mut self, new_song: Song<'q>) {
             let new_element = Box::new(Element::new(new_song));
@@ -330,10 +336,10 @@ mod player {
 
 fn main() {
     let song_one = Song { title: "track 1", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 1") };
-    let song_two = Song { title: "track 2", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 2") };
+    let song_two = Song { title: "track 2", album: "Album 2", artist: "Artist 1", link: Link::Spotify("Spotify Link 2") };
     let song_three = Song { title: "track 3", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 3") };
-    let song_four = Song { title: "track 4", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 4") };
-    let song_five = Song { title: "track 5", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 5") };
+    let song_four = Song { title: "track 4", album: "Album 3", artist: "Artist 2", link: Link::Spotify("Spotify Link 4") };
+    let song_five = Song { title: "track 5", album: "Album 3", artist: "Artist 2", link: Link::Spotify("Spotify Link 5") };
     //println!("Song: {:?}", song_one);
     /*
     let mut queue = player::Queue::new();
@@ -401,7 +407,10 @@ fn main() {
     println!("song_two, {:?}", queue.relative_song(2));
 */
     let vec1 = vec![song_one, song_two, song_three];
-    let mut queue = player::Queue::new();
+    let mut queue = player::Queue::new(5);
+    println!("{:?}", queue.test_max());
+    queue.set_max(10);
+    println!("{:?}", queue.test_max());
     queue.add_song_block_after_current(vec1);
     /*
     queue.add_song_after_album(song_four);
@@ -410,11 +419,10 @@ fn main() {
     let vec2 = vec![song_four, song_five];
     queue.add_song_block_after_album(vec2);
 
-    println!("song_one, {:?}", queue.current_song());
-    println!("song_two, {:?}", queue.relative_song(1));
-    println!("song_two, {:?}", queue.relative_song(2));
-    println!("song_four, {:?}", queue.end_song());
-    println!("song_five {:?}", queue.relative_song(3));
-    println!("song_four {:?}", queue.relative_song(4));
+    println!("current, {:?}", queue.current_song());
+    println!("next, {:?}", queue.relative_song(1));
+    println!("+2, {:?}", queue.relative_song(2));
+    println!("+3, {:?}", queue.relative_song(3));
+    println!("+4, {:?}", queue.relative_song(4));
     println!("after queue {:?}", queue.relative_song(5));
 }
