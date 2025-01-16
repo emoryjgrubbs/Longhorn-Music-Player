@@ -328,6 +328,7 @@ mod player {
                     }
                 }
             }
+            self.cull_excess_history();
         }
 
         pub fn deadvance_song(&mut self) {
@@ -357,6 +358,8 @@ mod player {
                                 None => { panic!("history element has disapeared, cannot advance pointer"); },
                                 Some(_) => {
                                     self.start = self_next;
+                                    self.len_queue -= 1;
+                                    self.len_history -= 1;
                                 },
                             }
                         },
@@ -460,7 +463,6 @@ fn main() {
 */
     let vec1 = vec![song_one, song_two, song_three];
     let mut queue = player::Queue::new(2);
-    queue.advance_album();
     queue.add_song_block_after_album(vec1);
     /*
     queue.add_song_after_album(song_four);
@@ -484,5 +486,4 @@ fn main() {
     println!("current, {:?}", queue.current_song());
     println!("next, {:?}", queue.relative_song(1));
     println!("after queue {:?}", queue.relative_song(2));
-
 }
