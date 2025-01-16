@@ -343,11 +343,27 @@ mod player {
             // restart play
         }
 
-        pub fn deadvance_album(&mut self) {}
+        pub fn deadvance_album(&mut self) {
+            if let Some(self_prev) = unsafe { self.current.as_ref().map(|element| &element.as_ref().prev) } {
+                let option_prev_album = unsafe { self_prev.as_ref().map(|element| &element.as_ref().song.album) };
+                if let Some(prev_album) = option_prev_album {
+                    let mut first_element_of_album = self.current;
+                    unsafe {
+                        while let Some(element_album) = first_element_of_album.as_ref().map(|element| element.as_ref().prev).expect("last iteration's prev disapeared").as_ref().map(|element| &element.as_ref().song.album) {
+                            if prev_album != element_album { break }
+                            first_element_of_album = first_element_of_album.as_ref().map(|element| element.as_ref().prev).expect("prev element has disapeared");
+                            self.len_history -= 1;
+                        }
+                    
+                        self.current = first_element_of_album;
+                    }
+                }
+            }
+        }
 
 
         fn cull_excess_history(&mut self) {
-            if self.max_history >= 0 {
+            if self.max_history >= 0 && self.current.is_some() {
                 let history_overage: i32 = self.len_history - self.max_history;
                 for _ in 0..history_overage {
                     match self.start {
@@ -462,7 +478,9 @@ fn main() {
     println!("song_two, {:?}", queue.relative_song(2));
 */
     let vec1 = vec![song_one, song_two, song_three];
-    let mut queue = player::Queue::new(2);
+    let mut queue = player::Queue::new(10);
+    queue.advance_album();
+    queue.deadvance_album();
     queue.add_song_block_after_album(vec1);
     /*
     queue.add_song_after_album(song_four);
@@ -480,10 +498,40 @@ fn main() {
 
     queue.advance_album();
     println!();
-    println!("before queue, {:?}", queue.relative_song(-3));
+    println!("before queue, {:?}", queue.relative_song(-4));
+    println!("-3, {:?}", queue.relative_song(-3));
     println!("-2, {:?}", queue.relative_song(-2));
     println!("prev, {:?}", queue.relative_song(-1));
     println!("current, {:?}", queue.current_song());
     println!("next, {:?}", queue.relative_song(1));
     println!("after queue {:?}", queue.relative_song(2));
+
+    queue.advance_song();
+    queue.deadvance_album();
+    println!();
+    println!("before queue, {:?}", queue.relative_song(-4));
+    println!("-3, {:?}", queue.relative_song(-3));
+    println!("-2, {:?}", queue.relative_song(-2));
+    println!("prev, {:?}", queue.relative_song(-1));
+    println!("current, {:?}", queue.current_song());
+    println!("next, {:?}", queue.relative_song(1));
+    println!("after queue {:?}", queue.relative_song(2));
+
+    queue.deadvance_album();
+    println!();
+    println!("current, {:?}", queue.current_song());
+    println!("next, {:?}", queue.relative_song(1));
+    println!("+2, {:?}", queue.relative_song(2));
+    println!("+3, {:?}", queue.relative_song(3));
+    println!("+4, {:?}", queue.relative_song(4));
+    println!("after queue {:?}", queue.relative_song(5));
+
+    queue.deadvance_album();
+    println!();
+    println!("current, {:?}", queue.current_song());
+    println!("next, {:?}", queue.relative_song(1));
+    println!("+2, {:?}", queue.relative_song(2));
+    println!("+3, {:?}", queue.relative_song(3));
+    println!("+4, {:?}", queue.relative_song(4));
+    println!("after queue {:?}", queue.relative_song(5));
 }
