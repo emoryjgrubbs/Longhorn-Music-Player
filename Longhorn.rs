@@ -43,10 +43,10 @@ mod player {
 
         pub fn set_max(&mut self, new_max_history: i32) {
             self.max_history = new_max_history;
+            self.cull_excess_history();
         }
-        pub fn test_max(&self) -> i32 {
-            self.max_history
-        }
+
+
 
         pub fn start_song(&self) -> Option<&Song> {
             unsafe { self.start.as_ref().map(|element| &element.as_ref().song) }
@@ -108,6 +108,8 @@ mod player {
                 },
             }
         }
+
+
 
         pub fn add_song_after_current(&mut self, new_song: Song<'q>) {
             let new_element = Box::new(Element::new(new_song));
@@ -295,7 +297,6 @@ mod player {
             }
         }
 
-        // TODO full implement
         pub fn advance_song(&mut self) {
             if let Some(current) = self.current {
                 let self_next;
@@ -305,7 +306,24 @@ mod player {
                     self.len_history += 1;
                 }
             }
+            self.cull_excess_history();
         }
+        pub fn advance_album(&mut self) {
+            let option_play_album = unsafe { self.current.as_ref().map(|element| &element.as_ref().song.album) };
+            if let Some(play_album) = option_play_album {
+                let mut last_element_of_album = self.current;
+                unsafe {
+                    while let Some(element_album) = last_element_of_album.as_ref().map(|element| &element.as_ref().song.album) {
+                        if play_album != element_album { break }
+                        last_element_of_album = last_element_of_album.as_ref().map(|element| element.as_ref().next).expect("next element has disapeared");
+                        self.len_history += 1;
+                    }
+                }
+                
+                self.current = last_element_of_album;
+            }
+        }
+
         pub fn deadvance_song(&mut self) {
             if let Some(current) = self.current {
                 let self_prev;
@@ -313,6 +331,34 @@ mod player {
                 if let Some(_) = self_prev {
                     self.current = self_prev;
                     self.len_history -= 1;
+                }
+            }
+            // restart play
+        }
+
+        pub fn deadvance_album(&mut self) {}
+
+
+        fn cull_excess_history(&mut self) {
+            if self.max_history >= 0 {
+                let history_overage: i32 = self.len_history - self.max_history;
+                for _ in 0..history_overage {
+                    match self.start {
+                        None => { panic!("history element has disapeared, no self.start to alter"); },
+                        Some(start) => unsafe {
+                            let self_next = (*start.as_ptr()).next;
+                            match self_next {
+                                None => { panic!("history element has disapeared, cannot advance pointer"); },
+                                Some(_) => {
+                                    self.start = self_next;
+                                },
+                            }
+                        },
+                    }
+                }
+                match self.start {
+                    None => { panic!("history element has disapeared, cannot set start.prev to None"); },
+                    Some(start) => unsafe { (*start.as_ptr()).prev = None; },
                 }
             }
         }
@@ -336,10 +382,10 @@ mod player {
 
 fn main() {
     let song_one = Song { title: "track 1", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 1") };
-    let song_two = Song { title: "track 2", album: "Album 2", artist: "Artist 1", link: Link::Spotify("Spotify Link 2") };
+    let song_two = Song { title: "track 2", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 2") };
     let song_three = Song { title: "track 3", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 3") };
-    let song_four = Song { title: "track 4", album: "Album 3", artist: "Artist 2", link: Link::Spotify("Spotify Link 4") };
-    let song_five = Song { title: "track 5", album: "Album 3", artist: "Artist 2", link: Link::Spotify("Spotify Link 5") };
+    let song_four = Song { title: "track 4", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 4") };
+    let song_five = Song { title: "track 5", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 5") };
     //println!("Song: {:?}", song_one);
     /*
     let mut queue = player::Queue::new();
@@ -408,9 +454,6 @@ fn main() {
 */
     let vec1 = vec![song_one, song_two, song_three];
     let mut queue = player::Queue::new(5);
-    println!("{:?}", queue.test_max());
-    queue.set_max(10);
-    println!("{:?}", queue.test_max());
     queue.add_song_block_after_current(vec1);
     /*
     queue.add_song_after_album(song_four);
@@ -425,4 +468,13 @@ fn main() {
     println!("+3, {:?}", queue.relative_song(3));
     println!("+4, {:?}", queue.relative_song(4));
     println!("after queue {:?}", queue.relative_song(5));
+
+    println!();
+    queue.advance_album();
+    println!("-3, {:?}", queue.relative_song(-3));
+    println!("-2, {:?}", queue.relative_song(-2));
+    println!("prev, {:?}", queue.relative_song(-1));
+    println!("current, {:?}", queue.current_song());
+    println!("next, {:?}", queue.relative_song(1));
+    println!("after queue {:?}", queue.relative_song(2));
 }
