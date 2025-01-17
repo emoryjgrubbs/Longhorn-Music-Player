@@ -22,6 +22,15 @@ mod settings;
 mod player;
 
 fn main() {
+    let mut user_settings = settings::Reader::new();
+
+    println!("{:?}", user_settings.history_len());
+    println!("{:?}", user_settings.library_paths());
+
+    user_settings.read();
+    println!();
+    println!("{:?}", user_settings.history_len());
+
     let mut queue = player::Queue::new(10);
 
     let song_one = Song { title: "track 1", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 1") };
@@ -29,10 +38,4 @@ fn main() {
     let song_three = Song { title: "track 3", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 3") };
     let song_four = Song { title: "track 4", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 4") };
     let song_five = Song { title: "track 5", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 5") };
-
-    let vec1 = vec![song_one, song_two, song_three];
-    queue.advance_album();
-
-    let vec2 = vec![song_four, song_five];
-    queue.add_song_block_after_album(vec2);
 }

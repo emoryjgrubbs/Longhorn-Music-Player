@@ -368,14 +368,14 @@ impl<'q> Queue<'q> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Element<'a> {
+struct Element<'a> {
     prev: Option<NonNull<Element<'a>>>,
     song: Song<'a>,
     next: Option<NonNull<Element<'a>>>,
 }
 
 impl<'s> Element<'s> {
-    pub fn new(song: Song<'s>) -> Element<'s> {
+    fn new(song: Song<'s>) -> Element<'s> {
         Element { prev: None, song: song.clone(), next: None }
     }
 }
