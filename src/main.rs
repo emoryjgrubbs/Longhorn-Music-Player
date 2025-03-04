@@ -32,8 +32,4 @@ fn main() {
     let song_three = Song { title: "track 3", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 3") };
     let song_four = Song { title: "track 4", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 4") };
     let song_five = Song { title: "track 5", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 5") };
-
-    queue.add_song_block_after_current(vec![song_one,song_two,song_three,song_four,song_five]);
-    queue.advance_album();
-    println!("{:?}", queue.relative_song(-4));
 }

@@ -1,6 +1,6 @@
 use std::ptr::NonNull;
 use std::boxed::Box;
-use Song;
+use crate::Song;
 
 #[derive(Debug, Clone)]
 pub struct Queue<'a> {
