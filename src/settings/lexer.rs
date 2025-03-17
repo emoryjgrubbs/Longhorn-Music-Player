@@ -1,16 +1,59 @@
+use std::fs::File;
+use std::io::BufReader;
+use std::io::prelude::*;
+
 pub struct Lexer<'l> {
     machine: Machine,
     tokens: Vec<LexicalUnit<'l>>
 }
 impl Lexer<'_>{
-    pub fn process_file(&mut self, config_path: &str) -> Lexer {
+    pub fn process_file(config_path: &str) -> std::io::Result<Vec<LexicalUnit>> {
+        // create lexer struct to contain tokens & leximes and the dfa
         let mut lexer = Lexer { machine: Machine::new(), tokens: vec![] };
-        // read file into lexer
-        lexer
+        // set up file
+        let file = File::open(config_path)?;
+        let mut reader = BufReader::new(file);
+        let mut contents = String::new();
+
+        // 
+        reader.read_to_string(&mut contents)?;
+        let mut lexime = String::new();
+        for symbol in contents.chars() {
+            let token = lexer.machine.transition(symbol);
+            if let Some(token) = token {
+                if [Token::Slash,
+                    Token::Star,
+                    Token::Num,
+                    Token::String,
+                    Token::WhiteSpace].contains(&token) {
+                    print!("Token {:?}\t", token);
+                    println!("Lexime: '{}'", lexime);
+                    lexime.clear();
+                    {
+                        let token = lexer.machine.transition(symbol);
+                        if let Some(token) = token {
+                            print!("Token {:?}\t", token);
+                            println!("Lexime: '{}'", symbol);
+                        }
+                        else { lexime.push(symbol); }
+                    }
+                }
+                else {
+                    lexime.push(symbol);
+                    print!("Token {:?}\t", token);
+                    println!("Lexime: '{}'", lexime);
+                    lexime.clear();
+                }
+            }
+            else { lexime.push(symbol); }
+        }
+
+        // return tokens & leximes
+        Ok(lexer.tokens)
     }
 }
 
-struct LexicalUnit<'l> {
+pub struct LexicalUnit<'l> {
     token: Token,
     lexime: &'l str,
 }
@@ -51,8 +94,8 @@ impl Machine{
             ']' => { Some(Token::CloseSquare) },
             '{' => { Some(Token::OpenCurl) },
             '}' => { Some(Token::CloseCurl) },
-            '(' => { Some(Token::OpenCurl) },
-            ')' => { Some(Token::CloseCurl) },
+            '(' => { Some(Token::OpenParen) },
+            ')' => { Some(Token::CloseParen) },
             '=' => { Some(Token::Asn) },
             '+' => { Some(Token::Plus) },
             '-' => { Some(Token::Dash) },
@@ -152,7 +195,10 @@ impl Machine{
                 // whitespace
                 else { None }
         }
-        else { Some(Token::WhiteSpace) }
+        else { 
+            self.state = SubMachine::StartMachine;
+            Some(Token::WhiteSpace)
+        }
     }
 
     // continues number token until end of number sequence
@@ -368,12 +414,16 @@ impl Machine{
                 else { self.string_machine(symbol) }
             },
             TopState::Top => {
-                if symbol == 'S' || symbol == 's' {
-                    self.state = SubMachine::TopSngLenMachine(TopSngLenState::S);
+                if symbol == 'A' || symbol == 'a' {
+                    self.state = SubMachine::TopMachine(TopState::TopA);
                     None
                 }
                 else if symbol == 'D' || symbol == 'd' {
                     self.state = SubMachine::TopDecayMachine(TopDecayState::D);
+                    None
+                }
+                else if symbol == 'S' || symbol == 's' {
+                    self.state = SubMachine::TopSngLenMachine(TopSngLenState::S);
                     None
                 }
                 else { self.string_machine(symbol) }
@@ -729,6 +779,7 @@ enum TopDecayState {
     DecayRat,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Token {
     // keywords
     File,

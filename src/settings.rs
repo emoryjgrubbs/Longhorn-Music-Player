@@ -1,4 +1,6 @@
 use core::f64;
+
+use lexer::Lexer;
 mod lexer;
 
 pub struct Reader<'r> {
@@ -9,7 +11,6 @@ pub struct Reader<'r> {
     top_artists_len: i32,
     top_decay: f64,
 }
-
 impl<'r> Reader<'_> {
     pub fn new() -> Reader<'r> {
         Reader { max_history: 50, library_paths: vec!["~/Music"], top_songs_len: 100, top_albums_len: 50, top_artists_len: 25, top_decay: 0.2 }
@@ -40,8 +41,8 @@ impl<'r> Reader<'_> {
 
 
     pub fn read(&mut self) {
-        self.max_history = -1;
-        // parse jsonc? settings file "src/config.jsonc"
+        // add way to set custom initial config file in future
+        let tokens = Lexer::process_file("./Longhorn.conf");
     }
 }
 
