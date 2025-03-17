@@ -1,15 +1,18 @@
+use core::f64;
+mod lexer;
+
 pub struct Reader<'r> {
     max_history: i32,
     library_paths: Vec<&'r str>,
     top_songs_len: i32,
     top_albums_len: i32,
     top_artists_len: i32,
-    top_decay: i32,
+    top_decay: f64,
 }
 
 impl<'r> Reader<'_> {
     pub fn new() -> Reader<'r> {
-        Reader { max_history: 50, library_paths: vec!["~/Music"], top_songs_len: 100, top_albums_len: 50, top_artists_len: 25, top_decay: 3 }
+        Reader { max_history: 50, library_paths: vec!["~/Music"], top_songs_len: 100, top_albums_len: 50, top_artists_len: 25, top_decay: 0.2 }
     }
 
 
@@ -31,7 +34,7 @@ impl<'r> Reader<'_> {
     pub fn top_artists_len(&self) -> i32 {
         self.top_artists_len.clone()
     }
-    pub fn top_decay(&self) -> i32 {
+    pub fn top_decay(&self) -> f64 {
         self.top_decay.clone()
     }
 

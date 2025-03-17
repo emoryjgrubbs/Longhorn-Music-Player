@@ -1,5 +1,6 @@
 // TODO remove once significantly implemented
 #[allow(dead_code)]
+#[allow(unused_parens)]
 
 #[derive(Debug, Clone)]
 struct Song<'a> {
