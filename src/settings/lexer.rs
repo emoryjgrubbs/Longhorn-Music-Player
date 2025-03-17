@@ -214,19 +214,31 @@ impl Machine{
     
     // continues string token until end of string sequence
     fn string_machine(&mut self, symbol: char) -> Option<Token> {
-        // run the symbol through startmachine
-        self.start_machine(symbol);
-        // check if it is still a string
-        if self.state != SubMachine::StringMachine {
+        // check if a symbol generates a single-character token
+        if let Some(_) = self.start_machine(symbol) {
             self.state = SubMachine::StartMachine;
             Some(Token::String)
         }
-        else { None }
+        // check if the symbol is recognized by a multi-character
+        //  machine, which excludes it from being a string
+        else if [SubMachine::CommStartMachine,
+                SubMachine::CommEndMachine,
+                SubMachine::WSMachine,
+                SubMachine::NumMachine].contains(&self.state) {
+            self.state = SubMachine::StartMachine;
+            Some(Token::String)
+        }
+        // otherwise stay in string machine
+        //  keyword contain characters from strings, so reset state to string
+        else {
+            self.state = SubMachine::StringMachine;
+            None
+        }
     }
 
     // keyword machines
     //  if a symbol matches the transition path, continue keyword, otherwise string
-    //  lines: 184 - 
+    //  lines: 241 - 685 |NOTE| keep up to date
     fn key_file_machine(&mut self, state: FileState, symbol: char) -> Option<Token> {
         match state {
             FileState::F => {
