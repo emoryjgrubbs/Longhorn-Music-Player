@@ -19,12 +19,14 @@ enum Link<'a> {
 }
 
 mod settings;
+use settings::Settings;
 
 mod player;
 
+
 fn main() {
-    let mut user_settings = settings::Reader::new();
-    user_settings.read();
+    let mut user_settings = Settings::new();
+    user_settings.read_config(None);
 
     let mut queue = player::Queue::new(user_settings.history_len());
 

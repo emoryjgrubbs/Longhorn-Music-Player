@@ -1,15 +1,16 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
+use std::collections::VecDeque;
 
-pub struct Lexer<'l> {
+pub struct Lexer {
     machine: Machine,
-    tokens: Vec<LexicalUnit<'l>>
+    tokens: VecDeque<LexicalUnit>
 }
-impl Lexer<'_>{
-    pub fn process_file(config_path: &str) -> std::io::Result<Vec<LexicalUnit>> {
+impl Lexer {
+    pub fn process_file(config_path: &str) -> std::io::Result<VecDeque<LexicalUnit>> {
         // create lexer struct to contain tokens & leximes and the dfa
-        let mut lexer = Lexer { machine: Machine::new(), tokens: vec![] };
+        let mut lexer = Lexer { machine: Machine::new(), tokens: VecDeque::new() };
         // set up file
         let file = File::open(config_path)?;
         let mut reader = BufReader::new(file);
@@ -26,22 +27,19 @@ impl Lexer<'_>{
                     Token::Num,
                     Token::String,
                     Token::WhiteSpace].contains(&token) {
-                    print!("Token {:?}\t", token);
-                    println!("Lexime: '{}'", lexime);
+                    lexer.tokens.push_back(LexicalUnit {token, lexime: lexime.clone()});
                     lexime.clear();
                     {
                         let token = lexer.machine.transition(symbol);
                         if let Some(token) = token {
-                            print!("Token {:?}\t", token);
-                            println!("Lexime: '{}'", symbol);
+                            lexer.tokens.push_back(LexicalUnit {token, lexime: lexime.clone()});
                         }
                         else { lexime.push(symbol); }
                     }
                 }
                 else {
                     lexime.push(symbol);
-                    print!("Token {:?}\t", token);
-                    println!("Lexime: '{}'", lexime);
+                    lexer.tokens.push_back(LexicalUnit {token, lexime: lexime.clone()});
                     lexime.clear();
                 }
             }
@@ -53,9 +51,14 @@ impl Lexer<'_>{
     }
 }
 
-pub struct LexicalUnit<'l> {
+#[derive(Debug)]
+pub struct LexicalUnit {
     token: Token,
-    lexime: &'l str,
+    lexime: String,
+}
+impl LexicalUnit {
+    pub fn get_token(&self) -> Token { self.token.clone() }
+    pub fn get_lexime(&self) -> String { self.lexime.clone() }
 }
 
 struct Machine {
@@ -791,7 +794,7 @@ enum TopDecayState {
     DecayRat,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // keywords
     File,
