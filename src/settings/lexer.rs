@@ -32,9 +32,13 @@ impl Lexer {
                     {
                         let token = lexer.machine.transition(symbol);
                         if let Some(token) = token {
+                            lexime.push(symbol);
                             lexer.tokens.push_back(LexicalUnit {token, lexime: lexime.clone()});
+                            lexime.clear();
                         }
-                        else { lexime.push(symbol); }
+                        else {
+                            lexime.push(symbol);
+                        }
                     }
                 }
                 else {
@@ -831,4 +835,6 @@ pub enum Token {
     Num,
     String,
     WhiteSpace,
+    // special
+    NegativeMult
 }
