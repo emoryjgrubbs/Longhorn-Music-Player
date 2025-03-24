@@ -6,17 +6,17 @@ use lexer::Lexer;
 mod parser;
 use parser::Parser;
 
-pub struct Settings<'r> {
+pub struct Settings {
     max_history: i32,
-    library_paths: Vec<&'r str>,
+    library_paths: Vec<String>,
     top_songs_len: i32,
     top_albums_len: i32,
     top_artists_len: i32,
     top_decay: f64,
 }
-impl<'r> Settings<'_> {
-    pub fn new() -> Settings<'r> {
-        Settings { max_history: 50, library_paths: vec!["~/Music"], top_songs_len: 100, top_albums_len: 50, top_artists_len: 25, top_decay: 0.2 }
+impl Settings {
+    pub fn new() -> Settings {
+        Settings { max_history: 50, library_paths: vec!["~/Music".to_string()], top_songs_len: 100, top_albums_len: 50, top_artists_len: 25, top_decay: 0.2 }
     }
 
     pub fn read_config(&mut self, optional_path: Option<&str>) {
@@ -26,10 +26,8 @@ impl<'r> Settings<'_> {
         // add way to set custom initial config file in future
         while let Some(path) = file_path_stack.pop() {
             let lexer_result = Lexer::process_file(path);
-            if let Ok(mut lexical_units) = lexer_result {
-                while let Some(lexical_unit) = lexical_units.pop_front() {
-                    println!("{:?}", lexical_unit);
-                }
+            if let Ok(lexical_units) = lexer_result {
+                Parser::process_tokens(lexical_units);
             }
             // syntax error in 'path'
             else { }
@@ -41,7 +39,7 @@ impl<'r> Settings<'_> {
         self.max_history.clone()
     }
 
-    pub fn library_paths(&self) -> Vec<&str> {
+    pub fn library_paths(&self) -> Vec<String> {
         self.library_paths.clone()
     }
 
