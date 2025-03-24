@@ -27,6 +27,7 @@ impl Parser {
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
+            // TODO implement real line error func
             if result == Some(Status::Done) { break }
         }
         Ok(parser)
@@ -150,11 +151,8 @@ impl Parser {
     }
 
     fn parse_comment(&mut self) -> Status {
-        let mut comment: String = "/*".to_string();
         loop {
             if let Some(lexical_unit) = self.tokens.pop_front() {
-                comment.push_str(&lexical_unit.get_lexime());
-
                 if lexical_unit.get_token() == Token::OpenComm { self.stack.push(Rule::CloseComm); }
                 else if lexical_unit.get_token() == Token::CloseComm { 
                     if let Some(rule) = self.stack.pop() {
@@ -163,7 +161,7 @@ impl Parser {
                     else { return Status::LineError }
 
                     if let Some(rule) = self.stack.last() {
-                        if rule != &Rule::CloseComm { println!("{}", comment); return Status::Done }
+                        if rule != &Rule::CloseComm { return Status::Done }
                     }
                     else { return Status::LineError }
                 }
@@ -350,13 +348,13 @@ impl Parser {
         let mut level_len = 1;
         loop {
             if let Err(()) = self.parse_clear_garbage() { return Err(()) }
-            match self.stack.pop() {
+            let rule = self.stack.pop();
+            match rule {
                 Some(Rule::Term) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         let mut number = lexical_unit.get_lexime();
                         match lexical_unit.get_token() {
                             Token::Num => {
-                                level_len += 1;
                                 if let Ok(result) = self.parse_num() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { 
@@ -367,7 +365,6 @@ impl Parser {
                                 else { return Err(()) }
                             },
                             Token::Dot => {
-                                level_len += 1;
                                 if let Ok(result) = self.parse_decimal() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { 
@@ -384,23 +381,24 @@ impl Parser {
                                 // special token to tell calculate_level
                                 //  so that -1 will be multiplied on the first pass
                                 op_stack.push(Token::NegativeMult);
+                                self.stack.push(Rule::Term);
                             }
                             // go a level deeper
                             Token::OpenCurl => {
                                 len_stack.push(level_len);
-                                level_len = 0;
+                                level_len = 1;
                                 self.stack.push(Rule::CloseCurl);
                                 self.stack.push(Rule::Term);
                             },
                             Token::OpenSquare => {
                                 len_stack.push(level_len);
-                                level_len = 0;
+                                level_len = 1;
                                 self.stack.push(Rule::CloseSquare);
                                 self.stack.push(Rule::Term);
                             },
                             Token::OpenParen => {
                                 len_stack.push(level_len);
-                                level_len = 0;
+                                level_len = 1;
                                 self.stack.push(Rule::CloseParen);
                                 self.stack.push(Rule::Term);
                             },
@@ -409,91 +407,108 @@ impl Parser {
                     }
                 },
                 Some(Rule::CloseCurl) => {
-                    if let Some(lexical_unit) = self.tokens.front() {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
                         if [Token::Plus,
                             Token::Dash,
                             Token::Star,
                             Token::Slash,
                             Token::Carrot,
                             Token::Percent].contains(&lexical_unit.get_token()) {
+                            level_len += 1;
                             self.stack.push(Rule::CloseCurl);
                             self.stack.push(Rule::Term);
                             op_stack.push(lexical_unit.get_token());
                         }
                         else { 
+                            if lexical_unit.get_token() != Token::CloseCurl { return Err(())}
                             let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
                             if let Ok(level) = level_result {
                                 term_stack.push(level);
                             }
-                            else { return Err(()) }
+                            if let Some(len) = len_stack.pop() {
+                                level_len = len;
+                            }
+                            else {
+                                if term_stack.len() == 1 && op_stack.len() == 0 {
+                                    return Ok(term_stack[0])
+                                }
+                                else{ return Err(()) }
+                            }
                         }
                     }
-                    else {
-                        let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
-                        if let Ok(level) = level_result {
-                            term_stack.push(level);
-                        }
-                        else { return Err(()) }
-                    }
+                    else { return Err(()) }
                 },
                 Some(Rule::CloseSquare) => {
-                    if let Some(lexical_unit) = self.tokens.front() {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
                         if [Token::Plus,
                             Token::Dash,
                             Token::Star,
                             Token::Slash,
                             Token::Carrot,
                             Token::Percent].contains(&lexical_unit.get_token()) {
+                            level_len += 1;
                             self.stack.push(Rule::CloseSquare);
                             self.stack.push(Rule::Term);
                             op_stack.push(lexical_unit.get_token());
                         }
                         else { 
+                            if lexical_unit.get_token() != Token::CloseSquare { return Err(())}
                             let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
                             if let Ok(level) = level_result {
                                 term_stack.push(level);
                             }
-                            else { return Err(()) }
+                            if let Some(len) = len_stack.pop() {
+                                level_len = len;
+                            }
+                            else {
+                                if term_stack.len() == 1 && op_stack.len() == 0 {
+                                    return Ok(term_stack[0])
+                                }
+                                else{ return Err(()) }
+                            }
                         }
                     }
-                    else {
-                        let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
-                        if let Ok(level) = level_result {
-                            term_stack.push(level);
-                        }
-                        else { return Err(()) }
-                    }
+                    else { return Err(()) }
                 },
                 Some(Rule::CloseParen) => {
-                    if let Some(lexical_unit) = self.tokens.front() {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
                         if [Token::Plus,
                             Token::Dash,
                             Token::Star,
                             Token::Slash,
                             Token::Carrot,
                             Token::Percent].contains(&lexical_unit.get_token()) {
+                            level_len += 1;
                             self.stack.push(Rule::CloseParen);
                             self.stack.push(Rule::Term);
                             op_stack.push(lexical_unit.get_token());
                         }
                         else { 
+                            if lexical_unit.get_token() != Token::CloseParen { return Err(())}
                             let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
                             if let Ok(level) = level_result {
                                 term_stack.push(level);
                             }
-                            else { return Err(()) }
+                            if let Some(len) = len_stack.pop() {
+                                level_len = len;
+                            }
+                            else {
+                                if term_stack.len() == 1 && op_stack.len() == 0 {
+                                    return Ok(term_stack[0])
+                                }
+                                else{ return Err(()) }
+                            }
                         }
                     }
-                    else {
-                        let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
-                        if let Ok(level) = level_result {
-                            term_stack.push(level);
-                        }
-                        else { return Err(()) }
-                    }
+                    else { return Err(()) }
                 },
                 None => { return Err(()) },
-                _ => { return Err(()) },
+                _ => { 
+                    if let Some(rule) = rule {
+                        self.stack.push(rule);
+                    }
+                    return Err(()) 
+                },
             }
         }
     }
@@ -521,10 +536,10 @@ impl Parser {
         // negative mult (make terms negative)
         let mut i: usize = 1;
         while i < level_len {
-            if Token::NegativeMult == level_op_stack[i] {
+            if Token::NegativeMult == level_op_stack[i-1] {
                 level_term_stack[i-1] = -1.0 * (level_term_stack[i]);
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 level_len -= 1;
             }
             else { i +=1; }
@@ -532,12 +547,12 @@ impl Parser {
         // exponentials
         let mut i = 1;
         while i < level_len {
-            if Token::Carrot == level_op_stack[i] {
+            if Token::Carrot == level_op_stack[i-1] {
                 // perform operation
                 level_term_stack[i-1] = level_term_stack[i-1].powf(level_term_stack[i]);
                 // reduce term and op stacks by 1
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 // reduce level length
                 level_len -= 1;
             }
@@ -546,22 +561,22 @@ impl Parser {
         // mult, div, mod
         let mut i = 1;
         while i < level_len {
-            if Token::Star == level_op_stack[i] {
+            if Token::Star == level_op_stack[i-1] {
                 level_term_stack[i-1] *= level_term_stack[i];
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 level_len -= 1;
             }
-            else if Token::Slash == level_op_stack[i] {
+            else if Token::Slash == level_op_stack[i-1] {
                 level_term_stack[i-1] /= level_term_stack[i];
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 level_len -= 1;
             }
-            else if Token::Percent == level_op_stack[i] {
+            else if Token::Percent == level_op_stack[i-1] {
                 level_term_stack[i-1] = level_term_stack[i-1].rem_euclid(level_term_stack[i]);
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 level_len -= 1;
             }
             else { i +=1; }
@@ -569,21 +584,20 @@ impl Parser {
         // plus, minus
         let mut i = 1;
         while i < level_len {
-            if Token::Plus == level_op_stack[i] {
+            if Token::Plus == level_op_stack[i-1] {
                 level_term_stack[i-1] += level_term_stack[i];
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 level_len -= 1;
             }
-            else if Token::Dash == level_op_stack[i] {
+            else if Token::Dash == level_op_stack[i-1] {
                 level_term_stack[i-1] -= level_term_stack[i];
                 level_term_stack.remove(i);
-                level_op_stack.remove(i);
+                level_op_stack.remove(i-1);
                 level_len -= 1;
             }
             else { i +=1; }
         }
-        // TODO check the math operations
         if level_len != 1 {
             println!("remaining length is not 1 but: {:?}", level_len);
         }
@@ -622,7 +636,7 @@ impl Parser {
         else { Err(()) }
     }
 }
-
+ 
 #[derive(PartialEq)]
 enum Status {
     LineError,
