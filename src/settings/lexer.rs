@@ -110,6 +110,7 @@ impl Machine{
             '%' => { Some(Token::Percent) },
             '\\' => { Some(Token::Esc) },
             '.' => { Some(Token::Dot) },
+            ',' => { Some(Token::Comma) },
             // possible comment
             '*' => {
                 self.state = SubMachine::CommEndMachine;
@@ -829,6 +830,7 @@ pub enum Token {
     Carrot,
     Percent,
     Dot,
+    Comma,
     Esc,
     EndL,
     // lexime needed

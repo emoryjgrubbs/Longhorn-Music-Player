@@ -4,6 +4,7 @@ use super::lexer::LexicalUnit;
 use super::lexer::Token;
 use std::collections::VecDeque;
 use std::result;
+use std::vec;
 
 pub struct Parser {
     settings: Settings,
@@ -150,27 +151,6 @@ impl Parser {
         }
     }
 
-    fn parse_comment(&mut self) -> Status {
-        loop {
-            if let Some(lexical_unit) = self.tokens.pop_front() {
-                if lexical_unit.get_token() == Token::OpenComm { self.stack.push(Rule::CloseComm); }
-                else if lexical_unit.get_token() == Token::CloseComm { 
-                    if let Some(rule) = self.stack.pop() {
-                        if rule != Rule::CloseComm { return Status::LineError }
-                    }
-                    else { return Status::LineError }
-
-                    if let Some(rule) = self.stack.last() {
-                        if rule != &Rule::CloseComm { return Status::Done }
-                    }
-                    else { return Status::LineError }
-                }
-
-            }
-            else { return Status::LineError }
-        }
-    }
-
     fn parse_path(&mut self) -> Option<String> {
         if let Err(()) = self.parse_asn() { return None }
         let path;
@@ -180,6 +160,7 @@ impl Parser {
         if let Err(()) = self.parse_to_endl() { return None }
         Some(path)
     }
+    // TODO change these to automatically be in a math block
     fn parse_int(&mut self) -> Option<i32> {
         if let Err(()) = self.parse_asn() { return None }
         let int;
@@ -301,39 +282,6 @@ impl Parser {
         Some(float)
     }
 
-    fn parse_asn(&mut self) -> Result<(), ()> {
-        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
-        if let Some(lexical_unit) = self.tokens.pop_front() {
-            if lexical_unit.get_token() != Token::Asn { return Err(()) }
-        }
-        else { return Err(()) }
-        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
-        Ok(())
-    }
-
-    fn parse_to_endl(&mut self) -> Result<(), ()> {
-        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
-        if let Some(lexical_unit) = self.tokens.pop_front() {
-            if lexical_unit.get_token() != Token::EndL { return Err(()) }
-        }
-        Ok(())
-    }
-
-    fn parse_clear_garbage(&mut self) -> Result<(), ()> {
-        loop {
-            if let Some(lexical_unit) = self.tokens.front() {
-                if lexical_unit.get_token() == Token::WhiteSpace { self.tokens.pop_front(); }
-                else if lexical_unit.get_token() == Token::OpenComm {
-                    self.tokens.pop_front();
-                    self.stack.push(Rule::CloseComm);
-                    self.parse_comment();
-                }
-                else { return Ok(()) }
-            } 
-            else { return Err(()) }
-        }
-    }
-
     fn parse_math(&mut self) -> Result<f64, ()> {
         self.stack.push(Rule::CloseCurl);
         self.stack.push(Rule::Term);
@@ -342,58 +290,73 @@ impl Parser {
         let mut op_stack = vec![];
         // terms
         let mut term_stack = vec![];
+        // number of terms (used with lists)
+        let mut term_len_stack = vec![];
+        // number of terms in the current list
+        let mut list_len_stack = vec![];
         // length of levels
         let mut len_stack = vec![];
 
+        let mut list_len = 1;
         let mut level_len = 1;
         loop {
+            // remove any comments or white space between terms
             if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+            // get rule
             let rule = self.stack.pop();
             match rule {
+                // expression needs a term
                 Some(Rule::Term) => {
+                    // get term token
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         let mut number = lexical_unit.get_lexime();
                         match lexical_unit.get_token() {
+                            // number term (may have decimal that is parsed by parse_num)
                             Token::Num => {
                                 if let Ok(result) = self.parse_num() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { 
                                         term_stack.push(parsed_number);
+                                        term_len_stack.push(0);
                                     }
                                     else { return Err(()) }
                                 }
                                 else { return Err(()) }
                             },
+                            // decimal term
                             Token::Dot => {
                                 if let Ok(result) = self.parse_decimal() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { 
                                         term_stack.push(parsed_number);
+                                        term_len_stack.push(0);
                                     }
                                     else { return Err(()) }
                                 }
                                 else { return Err(()) }
                             },
-                            // negative number
+                            // negative term
                             Token::Dash => {
                                 level_len += 1;
                                 term_stack.push(-1.0);
+                                term_len_stack.push(0);
                                 // special token to tell calculate_level
                                 //  so that -1 will be multiplied on the first pass
                                 op_stack.push(Token::NegativeMult);
                                 self.stack.push(Rule::Term);
                             }
+                            // list term: add a list to the stack as a term
+                            Token::OpenSquare => {
+                                list_len_stack.push(list_len);
+                                list_len = 1;
+                                self.stack.push(Rule::CloseSquare);
+                                self.stack.push(Rule::Term);
+                            },
                             // go a level deeper
                             Token::OpenCurl => {
                                 len_stack.push(level_len);
                                 level_len = 1;
                                 self.stack.push(Rule::CloseCurl);
-                                self.stack.push(Rule::Term);
-                            },
-                            Token::OpenSquare => {
-                                len_stack.push(level_len);
-                                level_len = 1;
-                                self.stack.push(Rule::CloseSquare);
                                 self.stack.push(Rule::Term);
                             },
                             Token::OpenParen => {
@@ -406,8 +369,12 @@ impl Parser {
                         }
                     }
                 },
+                // return from curly brace as a term (may end math block)
                 Some(Rule::CloseCurl) => {
+                    // there is another token
                     if let Some(lexical_unit) = self.tokens.pop_front() {
+                        // the token is a operator (add the ending bracket back to the stack
+                        //  along with another term
                         if [Token::Plus,
                             Token::Dash,
                             Token::Star,
@@ -420,14 +387,21 @@ impl Parser {
                             op_stack.push(lexical_unit.get_token());
                         }
                         else { 
+                            // check that the needed ending bracket matches the token
                             if lexical_unit.get_token() != Token::CloseCurl { return Err(())}
-                            let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
+                            // calculate the value of the bracketed expression
+                            let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
+                            // if the result is valid push it to the stack
+                            //  5 + (2 * 3) -> 5 + 6
                             if let Ok(level) = level_result {
                                 term_stack.push(level);
                             }
+                            // get the length of that level's expression
                             if let Some(len) = len_stack.pop() {
                                 level_len = len;
                             }
+                            // if there is no length to pop, check if the math block has reached a
+                            //  valid end
                             else {
                                 if term_stack.len() == 1 && op_stack.len() == 0 {
                                     return Ok(term_stack[0])
@@ -438,38 +412,7 @@ impl Parser {
                     }
                     else { return Err(()) }
                 },
-                Some(Rule::CloseSquare) => {
-                    if let Some(lexical_unit) = self.tokens.pop_front() {
-                        if [Token::Plus,
-                            Token::Dash,
-                            Token::Star,
-                            Token::Slash,
-                            Token::Carrot,
-                            Token::Percent].contains(&lexical_unit.get_token()) {
-                            level_len += 1;
-                            self.stack.push(Rule::CloseSquare);
-                            self.stack.push(Rule::Term);
-                            op_stack.push(lexical_unit.get_token());
-                        }
-                        else { 
-                            if lexical_unit.get_token() != Token::CloseSquare { return Err(())}
-                            let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
-                            if let Ok(level) = level_result {
-                                term_stack.push(level);
-                            }
-                            if let Some(len) = len_stack.pop() {
-                                level_len = len;
-                            }
-                            else {
-                                if term_stack.len() == 1 && op_stack.len() == 0 {
-                                    return Ok(term_stack[0])
-                                }
-                                else{ return Err(()) }
-                            }
-                        }
-                    }
-                    else { return Err(()) }
-                },
+                // return from parenthesis as a term
                 Some(Rule::CloseParen) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         if [Token::Plus,
@@ -485,25 +428,62 @@ impl Parser {
                         }
                         else { 
                             if lexical_unit.get_token() != Token::CloseParen { return Err(())}
-                            let level_result = self.calculate_level(&mut term_stack, &mut op_stack, level_len); 
+                            let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
                             if let Ok(level) = level_result {
                                 term_stack.push(level);
                             }
                             if let Some(len) = len_stack.pop() {
                                 level_len = len;
                             }
-                            else {
-                                if term_stack.len() == 1 && op_stack.len() == 0 {
-                                    return Ok(term_stack[0])
-                                }
-                                else{ return Err(()) }
-                            }
+                            // math block always ends with a close curly
+                            else { return Err(()) }
                         }
                     }
                     else { return Err(()) }
                 },
+                Some(Rule::CloseSquare) => {
+                    if let Some(lexical_unit) = self.tokens.front() {
+                        if lexical_unit.get_token() == Token::Comma {
+                            self.stack.push(Rule::CloseSquareNotComma);
+                            self.tokens.pop_front();
+                        }
+                        else if lexical_unit.get_token() == Token::CloseSquare {
+                            self.tokens.pop_front();
+                            term_len_stack.push(list_len);
+                            if let Some(len) = list_len_stack.pop() {
+                                list_len = len;
+                            }
+                            else { return Err(()) }
+                        }
+                        else {
+                            self.stack.push(Rule::CloseSquare);
+                            self.stack.push(Rule::Term);
+                            list_len += 1;
+                        }
+                    }
+                },
+                // prevent empty commas [ ..., , ... ]
+                //  while allowing trailing commas [ ..., ]
+                Some(Rule::CloseSquareNotComma) => {
+                    if let Some(lexical_unit) = self.tokens.front() {
+                        if lexical_unit.get_token() == Token::CloseSquare {
+                            self.tokens.pop_front();
+                            term_len_stack.push(list_len);
+                            if let Some(len) = list_len_stack.pop() {
+                                list_len = len;
+                            }
+                            else { return Err(()) }
+                        }
+                        else {
+                            self.stack.push(Rule::CloseSquare);
+                            self.stack.push(Rule::Term);
+                            list_len += 1;
+                        }
+                    }
+                },
                 None => { return Err(()) },
                 _ => { 
+                    // protection for further lines
                     if let Some(rule) = rule {
                         self.stack.push(rule);
                     }
@@ -512,96 +492,669 @@ impl Parser {
             }
         }
     }
-    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, op_stack: &mut Vec<Token>, mut level_len: usize) -> Result<f64, ()> {
+    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, mut level_len: usize) -> Result<f64, ()> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
+        let mut level_term_len_stack = VecDeque::new();
+        let mut current_term_len_stack = vec![];
+        let mut current_term_len = 0;
+        let mut remaining_len_stack = vec![];
+        let mut remaining_len = 0;
 
-        if let Some(term) = term_stack.pop() {
-            level_term_stack.push_front(term);
+        // it's only necessary to reverse where list lengths are stored
+        //  if left to right expression evalution is desireable
+        if let Some(term_len) = term_len_stack.pop() {
+            // first term is a single value
+            if term_len == 0 {
+                level_term_len_stack.push_front(term_len);
+                if let Some(term) = term_stack.pop() {
+                    level_term_stack.push_front(term);
+                }
+                else { return Err(()) }
+            }
+            // first term is a list
+            else {
+                current_term_len_stack.push(current_term_len);
+                current_term_len = term_len;
+                remaining_len_stack.push(current_term_len);
+                remaining_len = current_term_len;
+                // add entire list term
+                loop {
+                    remaining_len -= 1;
+                    // get a list item and add it to the term list
+                    if let Some(term_len) = term_len_stack.pop() {
+                        // single term item
+                        if term_len == 0 {
+                            level_term_len_stack.push_front(term_len);
+                            if let Some(term) = term_stack.pop() {
+                                level_term_stack.push_front(term);
+                            }
+                            else { return Err(()) }
+                        }
+                        // sub-list term item
+                        else {
+                            current_term_len_stack.push(current_term_len);
+                            remaining_len_stack.push(remaining_len);
+                            current_term_len = term_len;
+                            remaining_len = current_term_len;
+                        }
+                    }
+                    else { return Err(()) }
+                    // return from added sub-lists
+                    while remaining_len == 0 {
+                        level_term_len_stack.push_front(current_term_len);
+                        if let Some(len) = current_term_len_stack.pop() {
+                            current_term_len = len;
+                            // a single item is not a list and cannot have sublists
+                            //  this is the bottom of the recursive list term stack
+                            if current_term_len == 0 { break }
+                            else {
+                                // unwrap sub lists
+                                if let Some(sub_len) = level_term_len_stack.pop_front() {
+                                    current_term_len += sub_len - 1;
+                                }
+                                else { return Err(()) }
+                            }
+                        }
+                        else { return Err(()) }
+                        if let Some(len) = remaining_len_stack.pop() {
+                            remaining_len = len;
+                        }
+                        else { return Err(()) }
+                    }
+                    // break from outer loop after fully adding list
+                    if current_term_len == 0 { break }
+                }
+            }
         }
         else { return Err(()) }
+
         // add all terms and ops for expression
         for _ in 1..level_len {
-            if let Some(term) = term_stack.pop() {
-                level_term_stack.push_front(term);
-            }
-            else { return Err(()) }
             if let Some(op) = op_stack.pop() {
                 level_op_stack.push_front(op);
             }
             else { return Err(()) }
+
+            if let Some(term_len) = term_len_stack.pop() {
+                // first term is a single value
+                if term_len == 0 {
+                    level_term_len_stack.push_front(term_len);
+                    if let Some(term) = term_stack.pop() {
+                        level_term_stack.push_front(term);
+                    }
+                    else { return Err(()) }
+                }
+                // first term is a list
+                else {
+                    current_term_len_stack.push(current_term_len);
+                    current_term_len = term_len;
+                    remaining_len_stack.push(current_term_len);
+                    remaining_len = current_term_len;
+                    // add entire list term
+                    loop {
+                        remaining_len -= 1;
+                        // get a list item and add it to the term list
+                        if let Some(term_len) = term_len_stack.pop() {
+                            // single term item
+                            if term_len == 0 {
+                                level_term_len_stack.push_front(term_len);
+                                if let Some(term) = term_stack.pop() {
+                                    level_term_stack.push_front(term);
+                                }
+                                else { return Err(()) }
+                            }
+                            // sub-list term item
+                            else {
+                                current_term_len_stack.push(current_term_len);
+                                remaining_len_stack.push(remaining_len);
+                                current_term_len = term_len;
+                                remaining_len = current_term_len;
+                            }
+                        }
+                        else { return Err(()) }
+                        // return from added sub-lists
+                        while remaining_len == 0 {
+                            level_term_len_stack.push_front(current_term_len);
+                            if let Some(len) = current_term_len_stack.pop() {
+                                current_term_len = len;
+                                // a single item is not a list and cannot have sublists
+                                //  this is the bottom of the recursive list term stack
+                                if current_term_len == 0 { break }
+                                else {
+                                    if let Some(sub_len) = level_term_len_stack.pop_front() {
+                                        current_term_len += sub_len - 1;
+                                    }
+                                    else { return Err(()) }
+                                }
+                            }
+                            else { return Err(()) }
+                            if let Some(len) = remaining_len_stack.pop() {
+                                remaining_len = len;
+                            }
+                            else { return Err(()) }
+                        }
+                        // break from outer loop after fully adding list
+                        if current_term_len == 0 { break }
+                    }
+                }
+            }
+            else { return Err(()) }
         }
+
         // perform level math
         //  do loops for each operator in order of precidence
         // negative mult (make terms negative)
-        let mut i: usize = 1;
-        while i < level_len {
-            if Token::NegativeMult == level_op_stack[i-1] {
-                level_term_stack[i-1] = -1.0 * (level_term_stack[i]);
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                level_len -= 1;
+        let mut output_terms =  VecDeque::new();
+        let mut output_term_lens = VecDeque::new();
+        let mut unused_ops = VecDeque::new();
+        while let Some(op) = level_op_stack.pop_front() {
+            if op == Token::NegativeMult {
+                // ensure term one is -1
+                let mut term_one = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            if term == -1.0 {
+                                term_one.push(-1.0);
+                            }
+                            else { return Err(()) }
+                        }
+                        else { return Err(()) }
+                    }
+                }
+                else { return Err(()) }
+
+                // build term two list
+                let mut term_two = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_two.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_two.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                // perform operation on all elements
+                let len = term_two.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                for element in term_two {
+                    output_terms.push_back(-element);
+                    output_term_lens.push_back(0);
+                }
             }
-            else { i +=1; }
+            else { 
+                let mut unused_term = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            unused_term.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                unused_term.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                let len = unused_term.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                for element in unused_term {
+                    output_terms.push_back(element);
+                    output_term_lens.push_back(0);
+                }
+
+                unused_ops.push_back(op);
+            }
         }
+        // if there is a last unused term
+        let mut unused_term = vec![];
+        if let Some(len) = level_term_len_stack.pop_front() {
+            if len == 0 {
+                if let Some(term) = level_term_stack.pop_front() {
+                    unused_term.push(term);
+                }
+                else { return Err(()) }
+            }
+            else{
+                for _ in 0..len {
+                    if let Some(term) = level_term_stack.pop_front() {
+                        unused_term.push(term);
+                    }
+                    else { return Err(()) }
+                    if let None = level_term_len_stack.pop_front() { return Err(()) }
+                }
+            }
+        }
+
+        let len = unused_term.len();
+        if len > 1 { output_term_lens.push_back(len); }
+        for element in unused_term {
+            output_terms.push_back(element);
+            output_term_lens.push_back(0);
+        }
+
+        level_term_stack = output_terms.clone();
+        level_term_len_stack = output_term_lens.clone();
+        level_op_stack = unused_ops.clone();
+
         // exponentials
-        let mut i = 1;
-        while i < level_len {
-            if Token::Carrot == level_op_stack[i-1] {
+        output_terms.clear();
+        output_term_lens.clear();
+        unused_ops.clear();
+        while let Some(op) = level_op_stack.pop_front() {
+            if op == Token::Carrot {
+                // build term one
+                let mut term_one = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_one.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_one.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                // build term two
+                let mut term_two = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_two.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_two.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
                 // perform operation
-                level_term_stack[i-1] = level_term_stack[i-1].powf(level_term_stack[i]);
-                // reduce term and op stacks by 1
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                // reduce level length
-                level_len -= 1;
+                let len = term_one.len() * term_two.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                for element_one in term_one {
+                    for element_two in term_two.clone() {
+                        output_terms.push_back(element_one.powf(element_two));
+                        output_term_lens.push_back(0);
+                    }
+                }
             }
-            else { i +=1; }
+            else {
+                let mut unused_term = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            unused_term.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                unused_term.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                let len = unused_term.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                for element in unused_term {
+                    output_terms.push_back(element);
+                    output_term_lens.push_back(0);
+                }
+
+                unused_ops.push_back(op);
+            }
         }
+        // if there is a last unused term
+        let mut unused_term = vec![];
+        if let Some(len) = level_term_len_stack.pop_front() {
+            if len == 0 {
+                if let Some(term) = level_term_stack.pop_front() {
+                    unused_term.push(term);
+                }
+                else { return Err(()) }
+            }
+            else{
+                for _ in 0..len {
+                    if let Some(term) = level_term_stack.pop_front() {
+                        unused_term.push(term);
+                    }
+                    else { return Err(()) }
+                    if let None = level_term_len_stack.pop_front() { return Err(()) }
+                }
+            }
+        }
+
+        let len = unused_term.len();
+        if len > 1 { output_term_lens.push_back(len); }
+        for element in unused_term {
+            output_terms.push_back(element);
+            output_term_lens.push_back(0);
+        }
+
+        level_term_stack = output_terms.clone();
+        level_term_len_stack = output_term_lens.clone();
+        level_op_stack = unused_ops.clone();
+
         // mult, div, mod
-        let mut i = 1;
-        while i < level_len {
-            if Token::Star == level_op_stack[i-1] {
-                level_term_stack[i-1] *= level_term_stack[i];
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                level_len -= 1;
+        output_terms.clear();
+        output_term_lens.clear();
+        unused_ops.clear();
+        while let Some(op) = level_op_stack.pop_front() {
+            if [Token::Star, Token::Slash, Token::Percent].contains(&op) {
+                // build term one
+                let mut term_one = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_one.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_one.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                // build term two
+                let mut term_two = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_two.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_two.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                // perform operation
+                let len = term_one.len() * term_two.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                if Token::Star == op {
+                    for element_one in term_one {
+                        for element_two in term_two.clone() {
+                            output_terms.push_back(element_one * element_two);
+                            output_term_lens.push_back(0);
+                        }
+                    }
+                }
+                else if Token::Slash == op {
+                    for element_one in term_one {
+                        for element_two in term_two.clone() {
+                            output_terms.push_back(element_one / element_two);
+                            output_term_lens.push_back(0);
+                        }
+                    }
+                }
+                else if Token::Percent == op {
+                    for element_one in term_one {
+                        for element_two in term_two.clone() {
+                            output_terms.push_back(element_one.rem_euclid(element_two));
+                            output_term_lens.push_back(0);
+                        }
+                    }
+                }
             }
-            else if Token::Slash == level_op_stack[i-1] {
-                level_term_stack[i-1] /= level_term_stack[i];
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                level_len -= 1;
+            else {
+                let mut unused_term = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            unused_term.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                unused_term.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                let len = unused_term.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                for element in unused_term {
+                    output_terms.push_back(element);
+                    output_term_lens.push_back(0);
+                }
+
+                unused_ops.push_back(op);
             }
-            else if Token::Percent == level_op_stack[i-1] {
-                level_term_stack[i-1] = level_term_stack[i-1].rem_euclid(level_term_stack[i]);
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                level_len -= 1;
-            }
-            else { i +=1; }
         }
+        // if there is a last unused term
+        let mut unused_term = vec![];
+        if let Some(len) = level_term_len_stack.pop_front() {
+            if len == 0 {
+                if let Some(term) = level_term_stack.pop_front() {
+                    unused_term.push(term);
+                }
+                else { return Err(()) }
+            }
+            else{
+                for _ in 0..len {
+                    if let Some(term) = level_term_stack.pop_front() {
+                        unused_term.push(term);
+                    }
+                    else { return Err(()) }
+                    if let None = level_term_len_stack.pop_front() { return Err(()) }
+                }
+            }
+        }
+
+        let len = unused_term.len();
+        if len > 1 { output_term_lens.push_back(len); }
+        for element in unused_term {
+            output_terms.push_back(element);
+            output_term_lens.push_back(0);
+        }
+
+        level_term_stack = output_terms.clone();
+        level_term_len_stack = output_term_lens.clone();
+        level_op_stack = unused_ops.clone();
+
         // plus, minus
-        let mut i = 1;
-        while i < level_len {
-            if Token::Plus == level_op_stack[i-1] {
-                level_term_stack[i-1] += level_term_stack[i];
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                level_len -= 1;
+        output_terms.clear();
+        output_term_lens.clear();
+        unused_ops.clear();
+        while let Some(op) = level_op_stack.pop_front() {
+            if op == Token::Plus || op == Token::Dash {
+                // build term one
+                let mut term_one = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_one.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_one.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                // build term two
+                let mut term_two = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            term_two.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                term_two.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                // perform operation
+                let len = term_one.len() * term_two.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                if Token::Plus == op {
+                    for element_one in term_one {
+                        for element_two in term_two.clone() {
+                            output_terms.push_back(element_one + element_two);
+                            output_term_lens.push_back(0);
+                        }
+                    }
+                }
+                else if Token::Dash == op {
+                    for element_one in term_one {
+                        for element_two in term_two.clone() {
+                            output_terms.push_back(element_one - element_two);
+                            output_term_lens.push_back(0);
+                        }
+                    }
+                }
             }
-            else if Token::Dash == level_op_stack[i-1] {
-                level_term_stack[i-1] -= level_term_stack[i];
-                level_term_stack.remove(i);
-                level_op_stack.remove(i-1);
-                level_len -= 1;
+            else {
+                let mut unused_term = vec![];
+                if let Some(len) = level_term_len_stack.pop_front() {
+                    if len == 0 {
+                        if let Some(term) = level_term_stack.pop_front() {
+                            unused_term.push(term);
+                        }
+                        else { return Err(()) }
+                    }
+                    else{
+                        for _ in 0..len {
+                            if let Some(term) = level_term_stack.pop_front() {
+                                unused_term.push(term);
+                            }
+                            else { return Err(()) }
+                            if let None = level_term_len_stack.pop_front() { return Err(()) }
+                        }
+                    }
+                }
+                else { return Err(()) }
+
+                let len = unused_term.len();
+                if len > 1 { output_term_lens.push_back(len); }
+                for element in unused_term {
+                    output_terms.push_back(element);
+                    output_term_lens.push_back(0);
+                }
+
+                unused_ops.push_back(op);
             }
-            else { i +=1; }
         }
-        if level_len != 1 {
-            println!("remaining length is not 1 but: {:?}", level_len);
+        // if there is a last unused term
+        let mut unused_term = vec![];
+        if let Some(len) = level_term_len_stack.pop_front() {
+            if len == 0 {
+                if let Some(term) = level_term_stack.pop_front() {
+                    unused_term.push(term);
+                }
+                else { return Err(()) }
+            }
+            else{
+                for _ in 0..len {
+                    if let Some(term) = level_term_stack.pop_front() {
+                        unused_term.push(term);
+                    }
+                    else { return Err(()) }
+                    if let None = level_term_len_stack.pop_front() { return Err(()) }
+                }
+            }
         }
-        if let Some(term) = level_term_stack.pop_front() {
+
+        level_term_stack = output_terms.clone();
+        level_term_len_stack = output_term_lens.clone();
+        level_op_stack = unused_ops.clone();
+
+        let len = unused_term.len();
+        if len > 1 { output_term_lens.push_back(len); }
+        for element in unused_term {
+            output_terms.push_back(element);
+            output_term_lens.push_back(0);
+        }
+
+        if let Some(len) = level_term_len_stack.pop_front() {
+            if level_term_stack.len() != len {
+                return Err(())
+            }
+            if level_op_stack.len() != 0 {
+                return Err(())
+            }
+            level_term_len_stack.push_back(len);
+        }
+        println!("term len stack: {:?}", level_term_stack);
+        if let Some(term) = level_term_stack.pop_back() {
             Ok(term)
         }
         else { Err(()) }
@@ -635,6 +1188,60 @@ impl Parser {
         }
         else { Err(()) }
     }
+
+    fn parse_asn(&mut self) -> Result<(), ()> {
+        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+        if let Some(lexical_unit) = self.tokens.pop_front() {
+            if lexical_unit.get_token() != Token::Asn { return Err(()) }
+        }
+        else { return Err(()) }
+        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+        Ok(())
+    }
+
+    fn parse_to_endl(&mut self) -> Result<(), ()> {
+        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+        if let Some(lexical_unit) = self.tokens.pop_front() {
+            if lexical_unit.get_token() != Token::EndL { return Err(()) }
+        }
+        Ok(())
+    }
+
+    fn parse_clear_garbage(&mut self) -> Result<(), ()> {
+        loop {
+            if let Some(lexical_unit) = self.tokens.front() {
+                if lexical_unit.get_token() == Token::WhiteSpace { self.tokens.pop_front(); }
+                else if lexical_unit.get_token() == Token::OpenComm {
+                    self.tokens.pop_front();
+                    self.stack.push(Rule::CloseComm);
+                    self.parse_comment();
+                }
+                else { return Ok(()) }
+            } 
+            else { return Err(()) }
+        }
+    }
+
+    fn parse_comment(&mut self) -> Status {
+        loop {
+            if let Some(lexical_unit) = self.tokens.pop_front() {
+                if lexical_unit.get_token() == Token::OpenComm { self.stack.push(Rule::CloseComm); }
+                else if lexical_unit.get_token() == Token::CloseComm { 
+                    if let Some(rule) = self.stack.pop() {
+                        if rule != Rule::CloseComm { return Status::LineError }
+                    }
+                    else { return Status::LineError }
+
+                    if let Some(rule) = self.stack.last() {
+                        if rule != &Rule::CloseComm { return Status::Done }
+                    }
+                    else { return Status::LineError }
+                }
+
+            }
+            else { return Status::LineError }
+        }
+    }
 }
  
 #[derive(PartialEq)]
@@ -663,7 +1270,9 @@ enum Rule {
     CloseComm,
     CloseCurl,
     CloseSquare,
+    CloseSquareNotComma,
     CloseParen,
+    Comma,
     Op,
     Asn,
     EndL,
