@@ -282,6 +282,7 @@ impl Parser {
         Some(float)
     }
 
+    //  lines: 285 - 518 |NOTE| keep up to date
     fn parse_math(&mut self) -> Result<Vec<f64>, ()> {
         self.stack.push(Rule::CloseCurl);
         self.stack.push(Rule::Term);
@@ -515,6 +516,7 @@ impl Parser {
             }
         }
     }
+    //  lines: 519 - 843 |NOTE| keep up to date
     fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, ()> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();

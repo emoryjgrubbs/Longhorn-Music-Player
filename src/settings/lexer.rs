@@ -246,7 +246,7 @@ impl Machine{
 
     // keyword machines
     //  if a symbol matches the transition path, continue keyword, otherwise string
-    //  lines: 241 - 685 |NOTE| keep up to date
+    //  lines: 249 - 694 |NOTE| keep up to date
     fn key_file_machine(&mut self, state: FileState, symbol: char) -> Option<Token> {
         match state {
             FileState::F => {
