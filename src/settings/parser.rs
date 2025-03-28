@@ -515,14 +515,14 @@ impl Parser {
             }
         }
     }
-    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, mut level_len: usize) -> Result<Vec<f64>, ()> {
+    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, ()> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
         let mut level_term_len_stack = VecDeque::new();
         let mut current_term_len_stack = vec![];
         let mut current_term_len = 0;
         let mut remaining_len_stack = vec![];
-        let mut remaining_len = 0;
+        let mut remaining_len;
 
         // it's only necessary to reverse where list lengths are stored
         //  if left to right expression evalution is desireable
@@ -688,26 +688,13 @@ impl Parser {
                 }
                 else { return Err(()) }
 
-                // build term two list
-                let mut term_two = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_two.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_two.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                // build term two
+                let term_two;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_two = term;
                 }
                 else { return Err(()) }
+
 
                 // perform operation on all elements
                 let len = term_two.len();
@@ -718,23 +705,9 @@ impl Parser {
                 }
             }
             else { 
-                let mut unused_term = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            unused_term.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                unused_term.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let unused_term;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    unused_term = term;
                 }
                 else { return Err(()) }
 
@@ -749,24 +722,11 @@ impl Parser {
             }
         }
         // if there is a last unused term
-        let mut unused_term = vec![];
-        if let Some(len) = level_term_len_stack.pop_front() {
-            if len == 0 {
-                if let Some(term) = level_term_stack.pop_front() {
-                    unused_term.push(term);
-                }
-                else { return Err(()) }
-            }
-            else{
-                for _ in 0..len {
-                    if let Some(term) = level_term_stack.pop_front() {
-                        unused_term.push(term);
-                    }
-                    else { return Err(()) }
-                    if let None = level_term_len_stack.pop_front() { return Err(()) }
-                }
-            }
+        let unused_term;
+        if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+            unused_term = term;
         }
+        else { return Err(()) }
 
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
@@ -785,45 +745,15 @@ impl Parser {
         unused_ops.clear();
         while let Some(op) = level_op_stack.pop_front() {
             if op == Token::Carrot {
-                // build term one
-                let mut term_one = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_one.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_one.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let term_one;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_one = term;
                 }
                 else { return Err(()) }
 
-                // build term two
-                let mut term_two = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_two.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_two.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let term_two;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_two = term;
                 }
                 else { return Err(()) }
 
@@ -838,23 +768,9 @@ impl Parser {
                 }
             }
             else {
-                let mut unused_term = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            unused_term.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                unused_term.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let unused_term;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    unused_term = term;
                 }
                 else { return Err(()) }
 
@@ -869,24 +785,11 @@ impl Parser {
             }
         }
         // if there is a last unused term
-        let mut unused_term = vec![];
-        if let Some(len) = level_term_len_stack.pop_front() {
-            if len == 0 {
-                if let Some(term) = level_term_stack.pop_front() {
-                    unused_term.push(term);
-                }
-                else { return Err(()) }
-            }
-            else{
-                for _ in 0..len {
-                    if let Some(term) = level_term_stack.pop_front() {
-                        unused_term.push(term);
-                    }
-                    else { return Err(()) }
-                    if let None = level_term_len_stack.pop_front() { return Err(()) }
-                }
-            }
+        let unused_term;
+        if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+            unused_term = term;
         }
+        else { return Err(()) }
 
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
@@ -905,45 +808,15 @@ impl Parser {
         unused_ops.clear();
         while let Some(op) = level_op_stack.pop_front() {
             if [Token::Star, Token::Slash, Token::Percent].contains(&op) {
-                // build term one
-                let mut term_one = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_one.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_one.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let term_one;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_one = term;
                 }
                 else { return Err(()) }
 
-                // build term two
-                let mut term_two = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_two.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_two.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let term_two;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_two = term;
                 }
                 else { return Err(()) }
 
@@ -976,23 +849,9 @@ impl Parser {
                 }
             }
             else {
-                let mut unused_term = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            unused_term.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                unused_term.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let unused_term;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    unused_term = term;
                 }
                 else { return Err(()) }
 
@@ -1007,24 +866,11 @@ impl Parser {
             }
         }
         // if there is a last unused term
-        let mut unused_term = vec![];
-        if let Some(len) = level_term_len_stack.pop_front() {
-            if len == 0 {
-                if let Some(term) = level_term_stack.pop_front() {
-                    unused_term.push(term);
-                }
-                else { return Err(()) }
-            }
-            else{
-                for _ in 0..len {
-                    if let Some(term) = level_term_stack.pop_front() {
-                        unused_term.push(term);
-                    }
-                    else { return Err(()) }
-                    if let None = level_term_len_stack.pop_front() { return Err(()) }
-                }
-            }
+        let unused_term;
+        if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+            unused_term = term;
         }
+        else { unused_term = vec![]; }
 
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
@@ -1043,45 +889,15 @@ impl Parser {
         unused_ops.clear();
         while let Some(op) = level_op_stack.pop_front() {
             if op == Token::Plus || op == Token::Dash {
-                // build term one
-                let mut term_one = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_one.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_one.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let term_one;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_one = term;
                 }
                 else { return Err(()) }
 
-                // build term two
-                let mut term_two = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            term_two.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                term_two.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let term_two;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    term_two = term;
                 }
                 else { return Err(()) }
 
@@ -1106,23 +922,9 @@ impl Parser {
                 }
             }
             else {
-                let mut unused_term = vec![];
-                if let Some(len) = level_term_len_stack.pop_front() {
-                    if len == 0 {
-                        if let Some(term) = level_term_stack.pop_front() {
-                            unused_term.push(term);
-                        }
-                        else { return Err(()) }
-                    }
-                    else{
-                        for _ in 0..len {
-                            if let Some(term) = level_term_stack.pop_front() {
-                                unused_term.push(term);
-                            }
-                            else { return Err(()) }
-                            if let None = level_term_len_stack.pop_front() { return Err(()) }
-                        }
-                    }
+                let unused_term;
+                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    unused_term = term;
                 }
                 else { return Err(()) }
 
@@ -1137,24 +939,11 @@ impl Parser {
             }
         }
         // if there is a last unused term
-        let mut unused_term = vec![];
-        if let Some(len) = level_term_len_stack.pop_front() {
-            if len == 0 {
-                if let Some(term) = level_term_stack.pop_front() {
-                    unused_term.push(term);
-                }
-                else { return Err(()) }
-            }
-            else{
-                for _ in 0..len {
-                    if let Some(term) = level_term_stack.pop_front() {
-                        unused_term.push(term);
-                    }
-                    else { return Err(()) }
-                    if let None = level_term_len_stack.pop_front() { return Err(()) }
-                }
-            }
+        let unused_term;
+        if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+            unused_term = term;
         }
+        else { unused_term = vec![]; }
 
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
@@ -1180,6 +969,28 @@ impl Parser {
             Ok(level_term_stack.into())
         }
         else { Err(()) }
+    }
+    fn build_list_term(&mut self, level_term_stack: &mut VecDeque<f64>, level_term_len_stack: &mut VecDeque<usize>) -> Result<Vec<f64>, ()> {
+        let mut term = vec![];
+        if let Some(len) = level_term_len_stack.pop_front() {
+            if len == 0 {
+                if let Some(element) = level_term_stack.pop_front() {
+                    term.push(element);
+                }
+                else { return Err(()) }
+            }
+            else{
+                for _ in 0..len {
+                    if let Some(element) = level_term_stack.pop_front() {
+                        term.push(element);
+                    }
+                    else { return Err(()) }
+                    if let None = level_term_len_stack.pop_front() { return Err(()) }
+                }
+            }
+        }
+        else { return Err(()) }
+        Ok(term)
     }
     fn parse_num(&mut self) -> Result<String, ()> {
         let mut num = "".to_string();
