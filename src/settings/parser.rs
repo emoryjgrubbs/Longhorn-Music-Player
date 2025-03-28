@@ -519,77 +519,8 @@ impl Parser {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
         let mut level_term_len_stack = VecDeque::new();
-        let mut current_term_len_stack = vec![];
-        let mut current_term_len = 0;
-        let mut remaining_len_stack = vec![];
-        let mut remaining_len;
 
-        // it's only necessary to reverse where list lengths are stored
-        //  if left to right expression evalution is desireable
-        if let Some(term_len) = term_len_stack.pop() {
-            // first term is a single value
-            if term_len == 0 {
-                level_term_len_stack.push_front(term_len);
-                if let Some(term) = term_stack.pop() {
-                    level_term_stack.push_front(term);
-                }
-                else { return Err(()) }
-            }
-            // first term is a list
-            else {
-                current_term_len_stack.push(current_term_len);
-                current_term_len = term_len;
-                remaining_len_stack.push(current_term_len);
-                remaining_len = current_term_len;
-                // add entire list term
-                loop {
-                    remaining_len -= 1;
-                    // get a list item and add it to the term list
-                    if let Some(term_len) = term_len_stack.pop() {
-                        // single term item
-                        if term_len == 0 {
-                            level_term_len_stack.push_front(term_len);
-                            if let Some(term) = term_stack.pop() {
-                                level_term_stack.push_front(term);
-                            }
-                            else { return Err(()) }
-                        }
-                        // sub-list term item
-                        else {
-                            current_term_len_stack.push(current_term_len);
-                            remaining_len_stack.push(remaining_len);
-                            current_term_len = term_len;
-                            remaining_len = current_term_len;
-                        }
-                    }
-                    else { return Err(()) }
-                    // return from added sub-lists
-                    while remaining_len == 0 {
-                        level_term_len_stack.push_front(current_term_len);
-                        if let Some(len) = current_term_len_stack.pop() {
-                            current_term_len = len;
-                            // a single item is not a list and cannot have sublists
-                            //  this is the bottom of the recursive list term stack
-                            if current_term_len == 0 { break }
-                            else {
-                                // unwrap sub lists
-                                if let Some(sub_len) = level_term_len_stack.pop_front() {
-                                    current_term_len += sub_len - 1;
-                                }
-                                else { return Err(()) }
-                            }
-                        }
-                        else { return Err(()) }
-                        if let Some(len) = remaining_len_stack.pop() {
-                            remaining_len = len;
-                        }
-                        else { return Err(()) }
-                    }
-                    // break from outer loop after fully adding list
-                    if current_term_len == 0 { break }
-                }
-            }
-        }
+        if let Ok(_) = self.level_stack_add_term_list(term_stack, &mut level_term_stack, term_len_stack, &mut level_term_len_stack) {}
         else { return Err(()) }
 
         // add all terms and ops for expression
@@ -599,69 +530,7 @@ impl Parser {
             }
             else { return Err(()) }
 
-            if let Some(term_len) = term_len_stack.pop() {
-                // first term is a single value
-                if term_len == 0 {
-                    level_term_len_stack.push_front(term_len);
-                    if let Some(term) = term_stack.pop() {
-                        level_term_stack.push_front(term);
-                    }
-                    else { return Err(()) }
-                }
-                // first term is a list
-                else {
-                    current_term_len_stack.push(current_term_len);
-                    current_term_len = term_len;
-                    remaining_len_stack.push(current_term_len);
-                    remaining_len = current_term_len;
-                    // add entire list term
-                    loop {
-                        remaining_len -= 1;
-                        // get a list item and add it to the term list
-                        if let Some(term_len) = term_len_stack.pop() {
-                            // single term item
-                            if term_len == 0 {
-                                level_term_len_stack.push_front(term_len);
-                                if let Some(term) = term_stack.pop() {
-                                    level_term_stack.push_front(term);
-                                }
-                                else { return Err(()) }
-                            }
-                            // sub-list term item
-                            else {
-                                current_term_len_stack.push(current_term_len);
-                                remaining_len_stack.push(remaining_len);
-                                current_term_len = term_len;
-                                remaining_len = current_term_len;
-                            }
-                        }
-                        else { return Err(()) }
-                        // return from added sub-lists
-                        while remaining_len == 0 {
-                            level_term_len_stack.push_front(current_term_len);
-                            if let Some(len) = current_term_len_stack.pop() {
-                                current_term_len = len;
-                                // a single item is not a list and cannot have sublists
-                                //  this is the bottom of the recursive list term stack
-                                if current_term_len == 0 { break }
-                                else {
-                                    if let Some(sub_len) = level_term_len_stack.pop_front() {
-                                        current_term_len += sub_len - 1;
-                                    }
-                                    else { return Err(()) }
-                                }
-                            }
-                            else { return Err(()) }
-                            if let Some(len) = remaining_len_stack.pop() {
-                                remaining_len = len;
-                            }
-                            else { return Err(()) }
-                        }
-                        // break from outer loop after fully adding list
-                        if current_term_len == 0 { break }
-                    }
-                }
-            }
+            if let Ok(_) = self.level_stack_add_term_list(term_stack, &mut level_term_stack, term_len_stack, &mut level_term_len_stack) {}
             else { return Err(()) }
         }
 
@@ -970,7 +839,80 @@ impl Parser {
         }
         else { Err(()) }
     }
-    fn build_list_term(&mut self, level_term_stack: &mut VecDeque<f64>, level_term_len_stack: &mut VecDeque<usize>) -> Result<Vec<f64>, ()> {
+    fn level_stack_add_term_list(&mut self, term_stack: &mut Vec<f64>, level_term_stack: &mut VecDeque<f64>, term_len_stack: &mut Vec<usize>, level_term_len_stack: &mut VecDeque<usize>) -> Result<(), ()> {
+        let mut current_term_len_stack = vec![];
+        let mut current_term_len = 0;
+        let mut remaining_len_stack = vec![];
+        let mut remaining_len;
+        // it's only necessary to reverse where list lengths are stored
+        //  if left to right expression evalution is desireable
+        if let Some(term_len) = term_len_stack.pop() {
+            // first term is a single value
+            if term_len == 0 {
+                level_term_len_stack.push_front(term_len);
+                if let Some(term) = term_stack.pop() {
+                    level_term_stack.push_front(term);
+                }
+                else { return Err(()) }
+            }
+            // first term is a list
+            else {
+                current_term_len_stack.push(current_term_len);
+                current_term_len = term_len;
+                remaining_len_stack.push(current_term_len);
+                remaining_len = current_term_len;
+                // add entire list term
+                loop {
+                    remaining_len -= 1;
+                    // get a list item and add it to the term list
+                    if let Some(term_len) = term_len_stack.pop() {
+                        // single term item
+                        if term_len == 0 {
+                            level_term_len_stack.push_front(term_len);
+                            if let Some(term) = term_stack.pop() {
+                                level_term_stack.push_front(term);
+                            }
+                            else { return Err(()) }
+                        }
+                        // sub-list term item
+                        else {
+                            current_term_len_stack.push(current_term_len);
+                            remaining_len_stack.push(remaining_len);
+                            current_term_len = term_len;
+                            remaining_len = current_term_len;
+                        }
+                    }
+                    else { return Err(()) }
+                    // return from added sub-lists
+                    while remaining_len == 0 {
+                        level_term_len_stack.push_front(current_term_len);
+                        if let Some(len) = current_term_len_stack.pop() {
+                            current_term_len = len;
+                            // a single item is not a list and cannot have sublists
+                            //  this is the bottom of the recursive list term stack
+                            if current_term_len == 0 { break }
+                            else {
+                                if let Some(sub_len) = level_term_len_stack.pop_front() {
+                                    current_term_len += sub_len - 1;
+                                }
+                                else { return Err(()) }
+                            }
+                        }
+                        else { return Err(()) }
+                        if let Some(len) = remaining_len_stack.pop() {
+                            remaining_len = len;
+                        }
+                        else { return Err(()) }
+                    }
+                    // break from outer loop after fully adding list
+                    if current_term_len == 0 { break }
+                }
+            }
+        }
+        else { return Err(()) }
+        Ok(())
+    }
+    fn build_list_term(&self, level_term_stack: &mut VecDeque<f64>, level_term_len_stack: &mut VecDeque<usize>) -> Result<Vec<f64>, ()> {
         let mut term = vec![];
         if let Some(len) = level_term_len_stack.pop_front() {
             if len == 0 {
