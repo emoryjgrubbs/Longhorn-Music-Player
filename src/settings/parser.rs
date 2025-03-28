@@ -1,9 +1,7 @@
-// TODO remove debug println!s
 use super::Settings;
 use super::lexer::LexicalUnit;
 use super::lexer::Token;
 use std::collections::VecDeque;
-use std::result;
 use std::vec;
 
 pub struct Parser {
@@ -16,12 +14,6 @@ pub struct Parser {
 }
 impl Parser {
     pub fn process_tokens(tokens: VecDeque<LexicalUnit>) -> Result<Parser, ()> {
-        /*
-        for token in tokens {
-            println!("{:?}", token);
-        }
-        Err(())
-        */
         let mut parser = Parser { settings: Settings::new(), sub_files: vec![], stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
         // for error reporting purposes
         // loop over all elements in the tokens vec
@@ -295,7 +287,7 @@ impl Parser {
         Ok(float)
     }
 
-    //  lines: 285 - 518 |NOTE| keep up to date
+    //  lines: 290 - 523 |NOTE| keep up to date
     fn parse_math(&mut self) -> Result<Vec<f64>, ()> {
         self.stack.push(Rule::CloseCurl);
         self.stack.push(Rule::Term);
@@ -529,7 +521,7 @@ impl Parser {
             }
         }
     }
-    //  lines: 519 - 843 |NOTE| keep up to date
+    //  lines: 524 - 848 |NOTE| keep up to date
     fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, ()> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
@@ -610,7 +602,7 @@ impl Parser {
         if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
             unused_term = term;
         }
-        else { return Err(()) }
+        else { unused_term = vec![]; }
 
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
@@ -673,7 +665,7 @@ impl Parser {
         if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
             unused_term = term;
         }
-        else { return Err(()) }
+        else { unused_term = vec![]; }
 
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
