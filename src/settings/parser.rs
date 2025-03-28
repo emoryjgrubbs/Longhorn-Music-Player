@@ -22,14 +22,23 @@ impl Parser {
         }
         Err(())
         */
-        let mut parser = Parser { settings: Settings::new(), sub_files: vec![], stack: vec![Rule::Config], tokens , line_number: 0, error_lines: vec![] };
+        let mut parser = Parser { settings: Settings::new(), sub_files: vec![], stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
         // for error reporting purposes
         // loop over all elements in the tokens vec
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
             // TODO implement real line error func
-            if result == Some(Status::Done) { break }
+            if result == Some(Status::LineError) {
+                parser.error_lines.push(parser.line_number);
+                parser.line_number += 1;
+                println!("Syntax Error");
+                while let Some(lexical_unit) = parser.tokens.pop_front() {
+                    if lexical_unit.get_token() == Token::OpenComm {}
+                    if lexical_unit.get_token() == Token::EndL { break }
+                }
+            }
+            if result == Some(Status::Done) { println!("Error Lines: {:?}", parser.error_lines); break }
         }
         Ok(parser)
     }
@@ -68,25 +77,29 @@ impl Parser {
                             self.stack.push(Rule::Path);
                             self.stack.push(Rule::Asn);
 
-                            if let Some(result) = self.parse_path() {
-                                println!("New File: {:?}", &result);
-                                self.sub_files.push(result);
+                            if let Ok(result) = self.parse_path() {
+                                for file in result {
+                                    println!("New File: {:?}", &file);
+                                    self.sub_files.push(file);
+                                }
                                 self.line_number += 1;
                                 None
                             }
                             else { Some(Status::LineError) }
                         },
                         Token::LibPath => {
-                            if let Some(result) = self.parse_path() {
-                                println!("New Lib Path: {:?}", &result);
-                                self.settings.library_paths.push(result);
+                            if let Ok(result) = self.parse_path() {
+                                for path in result {
+                                    println!("New Lib Path: {:?}", &path);
+                                    self.settings.library_paths.push(path);
+                                }
                                 self.line_number += 1;
                                 None
                             }
                             else { Some(Status::LineError) }
                         },
                         Token::MaxHist => {
-                            if let Some(result) = self.parse_int() {
+                            if let Ok(result) = self.parse_int() {
                                 println!("New Max Hist: {:?}", &result);
                                 self.settings.max_history = result;
                                 self.line_number += 1;
@@ -95,7 +108,7 @@ impl Parser {
                             else { Some(Status::LineError) }
                         },
                         Token::TopSngLen => {
-                            if let Some(result) = self.parse_int() {
+                            if let Ok(result) = self.parse_int() {
                                 println!("New Top Sng Len: {:?}", &result);
                                 self.settings.top_songs_len = result;
                                 self.line_number += 1;
@@ -104,7 +117,7 @@ impl Parser {
                             else { Some(Status::LineError) }
                         },
                         Token::TopAlbLen => {
-                            if let Some(result) = self.parse_int() {
+                            if let Ok(result) = self.parse_int() {
                                 println!("New Top Alb Len: {:?}", &result);
                                 self.settings.top_albums_len = result;
                                 self.line_number += 1;
@@ -113,7 +126,7 @@ impl Parser {
                             else { Some(Status::LineError) }
                         },
                         Token::TopArtLen => {
-                            if let Some(result) = self.parse_int() {
+                            if let Ok(result) = self.parse_int() {
                                 println!("New Top Art Len: {:?}", &result);
                                 self.settings.top_artists_len = result;
                                 self.line_number += 1;
@@ -122,7 +135,7 @@ impl Parser {
                             else { Some(Status::LineError) }
                         },
                         Token::TopDecay => {
-                            if let Some(result) = self.parse_float() {
+                            if let Ok(result) = self.parse_float() {
                                 println!("New Top Decay Rate: {:?}", &result);
                                 self.settings.top_decay = result;
                                 self.line_number += 1;
@@ -151,18 +164,18 @@ impl Parser {
         }
     }
 
-    fn parse_path(&mut self) -> Option<String> {
-        if let Err(()) = self.parse_asn() { return None }
-        let path;
+    fn parse_path(&mut self) -> Result<Vec<String>, ()> {
+        if let Err(()) = self.parse_asn() { return Err(()) }
+        let mut path = vec![];
         // TODO implement
-        path = "".to_string();
+        path.push("".to_string());
         
-        if let Err(()) = self.parse_to_endl() { return None }
-        Some(path)
+        if let Err(()) = self.parse_to_endl() { return Err(()) }
+        Ok(path)
     }
     // TODO change these to automatically be in a math block
-    fn parse_int(&mut self) -> Option<i32> {
-        if let Err(()) = self.parse_asn() { return None }
+    fn parse_int(&mut self) -> Result<i32, ()> {
+        if let Err(()) = self.parse_asn() { return Err(())}
         let int;
         if let Some(lexical_unit) = self.tokens.pop_front() {
             let mut number = lexical_unit.get_lexime();
@@ -171,17 +184,17 @@ impl Parser {
                     if let Ok(result) = self.parse_num() {
                         number.push_str(&result);
                         if let Ok(parsed_result) = number.parse::<f64>() { int = parsed_result.round() as i32; }
-                        else { return None }
+                        else { return Err(()) }
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
                 Token::Dot => {
                     if let Ok(result) = self.parse_decimal() {
                         number.push_str(&result);
                         if let Ok(parsed_result) = number.parse::<f64>() { int = parsed_result.round() as i32; }
-                        else { return None }
+                        else { return Err(()) }
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
                 Token::Dash => { 
                     if let Some(lexical_unit) = self.tokens.pop_front() {
@@ -191,38 +204,38 @@ impl Parser {
                                 if let Ok(result) = self.parse_num() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { int = parsed_number.round() as i32; }
-                                    else { return None }
+                                    else { return Err(()) }
                                 }
-                                else { return None }
+                                else { return Err(()) }
                             },
                             Token::Dot => {
                                 if let Ok(result) = self.parse_decimal() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { int = parsed_number.round() as i32; }
-                                    else { return None }
+                                    else { return Err(()) }
                                 }
-                                else { return None }
+                                else { return Err(()) }
                             },
-                            _ => { return None },
+                            _ => { return Err(()) },
                         }
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
                 Token::OpenCurl => {
                     if let Ok(result) = self.parse_math() {
                         int = result[result.len()-1] as i32;
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
-                _ => { return None },
+                _ => { return Err(()) },
             }
         }
-        else { return None }
-        if let Err(()) = self.parse_to_endl() { return None }
-        Some(int)
+        else { return Err(()) }
+        if let Err(()) = self.parse_to_endl() { return Err(()) }
+        Ok(int)
     }
-    fn parse_float(&mut self) -> Option<f64> {
-        if let Err(()) = self.parse_asn() { return None }
+    fn parse_float(&mut self) -> Result<f64, ()> {
+        if let Err(()) = self.parse_asn() { return Err(())}
         let float;
         if let Some(lexical_unit) = self.tokens.pop_front() {
             let mut number = lexical_unit.get_lexime();
@@ -231,17 +244,17 @@ impl Parser {
                     if let Ok(result) = self.parse_num() {
                         number.push_str(&result);
                         if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                        else { return None }
+                        else { return Err(()) }
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
                 Token::Dot => {
                     if let Ok(result) = self.parse_decimal() {
                         number.push_str(&result);
                         if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                        else { return None }
+                        else { return Err(()) }
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
                 Token::Dash => { 
                     if let Some(lexical_unit) = self.tokens.pop_front() {
@@ -251,35 +264,35 @@ impl Parser {
                                 if let Ok(result) = self.parse_num() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                                    else { return None }
+                                    else { return Err(()) }
                                 }
-                                else { return None }
+                                else { return Err(()) }
                             },
                             Token::Dot => {
                                 if let Ok(result) = self.parse_decimal() {
                                     number.push_str(&result);
                                     if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                                    else { return None }
+                                    else { return Err(())}
                                 }
-                                else { return None }
+                                else { return Err(())}
                             },
-                            _ => { return None },
+                            _ => { return Err(()) },
                         }
                     }
-                    else { return None }
+                    else { return Err(()) }
                 },
                 Token::OpenCurl => {
                     if let Ok(result) = self.parse_math() {
                         float = result[result.len()-1];
                     }
-                    else { return None }
+                    else { return Err(())}
                 },
-                _ => { return None },
+                _ => { return Err(())},
             }
         }
-        else { return None }
-        if let Err(()) = self.parse_to_endl() { return None }
-        Some(float)
+        else { return Err(()) }
+        if let Err(()) = self.parse_to_endl() { return Err(()) }
+        Ok(float)
     }
 
     //  lines: 285 - 518 |NOTE| keep up to date
@@ -1003,6 +1016,7 @@ impl Parser {
         loop {
             if let Some(lexical_unit) = self.tokens.pop_front() {
                 if lexical_unit.get_token() == Token::OpenComm { self.stack.push(Rule::CloseComm); }
+                if lexical_unit.get_token() == Token::EndL { self.line_number += 1; }
                 else if lexical_unit.get_token() == Token::CloseComm { 
                     if let Some(rule) = self.stack.pop() {
                         if rule != Rule::CloseComm { return Status::LineError }
