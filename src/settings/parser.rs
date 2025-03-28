@@ -210,7 +210,7 @@ impl Parser {
                 },
                 Token::OpenCurl => {
                     if let Ok(result) = self.parse_math() {
-                        int = result as i32;
+                        int = result[result.len()-1] as i32;
                     }
                     else { return None }
                 },
@@ -270,7 +270,7 @@ impl Parser {
                 },
                 Token::OpenCurl => {
                     if let Ok(result) = self.parse_math() {
-                        float = result;
+                        float = result[result.len()-1];
                     }
                     else { return None }
                 },
@@ -282,7 +282,7 @@ impl Parser {
         Some(float)
     }
 
-    fn parse_math(&mut self) -> Result<f64, ()> {
+    fn parse_math(&mut self) -> Result<Vec<f64>, ()> {
         self.stack.push(Rule::CloseCurl);
         self.stack.push(Rule::Term);
 
@@ -393,8 +393,15 @@ impl Parser {
                             let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
                             // if the result is valid push it to the stack
                             //  5 + (2 * 3) -> 5 + 6
-                            if let Ok(level) = level_result {
-                                term_stack.push(level);
+                            if let Ok(level_stack) = level_result {
+                                let len = level_stack.len();
+                                for term in level_stack {
+                                    term_stack.push(term);
+                                    term_len_stack.push(0);
+                                }
+                                if len > 1 {
+                                    term_len_stack.push(len);
+                                }
                             }
                             // get the length of that level's expression
                             if let Some(len) = len_stack.pop() {
@@ -403,8 +410,17 @@ impl Parser {
                             // if there is no length to pop, check if the math block has reached a
                             //  valid end
                             else {
-                                if term_stack.len() == 1 && op_stack.len() == 0 {
-                                    return Ok(term_stack[0])
+                                if let Some(len) = term_len_stack.pop() {
+                                    if len == 0 && term_stack.len() != 1 {
+                                        return Err(())
+                                    }
+                                    if len != 0 && term_stack.len() != len {
+                                        return Err(())
+                                    }
+                                    if op_stack.len() != 0 {
+                                        return Err(())
+                                    }
+                                    return Ok(term_stack)
                                 }
                                 else{ return Err(()) }
                             }
@@ -429,8 +445,15 @@ impl Parser {
                         else { 
                             if lexical_unit.get_token() != Token::CloseParen { return Err(())}
                             let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
-                            if let Ok(level) = level_result {
-                                term_stack.push(level);
+                            if let Ok(level_stack) = level_result {
+                                let len = level_stack.len();
+                                for term in level_stack {
+                                    term_stack.push(term);
+                                    term_len_stack.push(0);
+                                }
+                                if len > 1 {
+                                    term_len_stack.push(len);
+                                }
                             }
                             if let Some(len) = len_stack.pop() {
                                 level_len = len;
@@ -492,7 +515,7 @@ impl Parser {
             }
         }
     }
-    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, mut level_len: usize) -> Result<f64, ()> {
+    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, mut level_len: usize) -> Result<Vec<f64>, ()> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
         let mut level_term_len_stack = VecDeque::new();
@@ -1133,10 +1156,6 @@ impl Parser {
             }
         }
 
-        level_term_stack = output_terms.clone();
-        level_term_len_stack = output_term_lens.clone();
-        level_op_stack = unused_ops.clone();
-
         let len = unused_term.len();
         if len > 1 { output_term_lens.push_back(len); }
         for element in unused_term {
@@ -1144,18 +1163,21 @@ impl Parser {
             output_term_lens.push_back(0);
         }
 
+        level_term_stack = output_terms;
+        level_term_len_stack = output_term_lens;
+        level_op_stack = unused_ops;
+
         if let Some(len) = level_term_len_stack.pop_front() {
-            if level_term_stack.len() != len {
+            if len == 0 && level_term_stack.len() != 1 {
+                return Err(())
+            }
+            if len != 0 && level_term_stack.len() != len {
                 return Err(())
             }
             if level_op_stack.len() != 0 {
                 return Err(())
             }
-            level_term_len_stack.push_back(len);
-        }
-        println!("term len stack: {:?}", level_term_stack);
-        if let Some(term) = level_term_stack.pop_back() {
-            Ok(term)
+            Ok(level_term_stack.into())
         }
         else { Err(()) }
     }
