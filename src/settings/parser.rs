@@ -15,12 +15,9 @@ pub struct Parser {
 impl Parser {
     pub fn process_tokens(tokens: VecDeque<LexicalUnit>) -> Result<Parser, ()> {
         let mut parser = Parser { settings: Settings::new(), sub_files: vec![], stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
-        // for error reporting purposes
-        // loop over all elements in the tokens vec
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
-            // TODO implement real line error func
             if result == Some(Status::LineError) {
                 parser.error_lines.push(parser.line_number);
                 parser.line_number += 1;
@@ -65,13 +62,9 @@ impl Parser {
                         },
                         // valid line assignment
                         Token::File => {
-                            self.stack.push(Rule::EndL);
-                            self.stack.push(Rule::Path);
-                            self.stack.push(Rule::Asn);
-
                             if let Ok(result) = self.parse_path() {
                                 for file in result {
-                                    println!("New File: {:?}", &file);
+                                    println!("New File: \"{}\"", &file);
                                     self.sub_files.push(file);
                                 }
                                 self.line_number += 1;
@@ -82,7 +75,7 @@ impl Parser {
                         Token::LibPath => {
                             if let Ok(result) = self.parse_path() {
                                 for path in result {
-                                    println!("New Lib Path: {:?}", &path);
+                                    println!("New Lib Path: \"{}\"", &path);
                                     self.settings.library_paths.push(path);
                                 }
                                 self.line_number += 1;
@@ -92,7 +85,7 @@ impl Parser {
                         },
                         Token::MaxHist => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Max Hist: {:?}", &result);
+                                println!("New Max Hist: {}", &result);
                                 self.settings.max_history = result;
                                 self.line_number += 1;
                                 None
@@ -101,7 +94,7 @@ impl Parser {
                         },
                         Token::TopSngLen => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Top Sng Len: {:?}", &result);
+                                println!("New Top Sng Len: {}", &result);
                                 self.settings.top_songs_len = result;
                                 self.line_number += 1;
                                 None
@@ -110,7 +103,7 @@ impl Parser {
                         },
                         Token::TopAlbLen => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Top Alb Len: {:?}", &result);
+                                println!("New Top Alb Len: {}", &result);
                                 self.settings.top_albums_len = result;
                                 self.line_number += 1;
                                 None
@@ -119,7 +112,7 @@ impl Parser {
                         },
                         Token::TopArtLen => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Top Art Len: {:?}", &result);
+                                println!("New Top Art Len: {}", &result);
                                 self.settings.top_artists_len = result;
                                 self.line_number += 1;
                                 None
@@ -128,7 +121,7 @@ impl Parser {
                         },
                         Token::TopDecay => {
                             if let Ok(result) = self.parse_float() {
-                                println!("New Top Decay Rate: {:?}", &result);
+                                println!("New Top Decay Rate: {}", &result);
                                 self.settings.top_decay = result;
                                 self.line_number += 1;
                                 None
@@ -158,12 +151,278 @@ impl Parser {
 
     fn parse_path(&mut self) -> Result<Vec<String>, ()> {
         if let Err(()) = self.parse_asn() { return Err(()) }
-        let mut path = vec![];
-        // TODO implement
-        path.push("".to_string());
-        
-        if let Err(()) = self.parse_to_endl() { return Err(()) }
-        Ok(path)
+
+        self.stack.push(Rule::Char);
+
+        let mut paths = vec!["".to_string()];
+        let mut list_items: Vec<String> = vec![];
+        let mut list_item = vec!["".to_string()];
+        let mut escaped_closed_square = 0;
+        let mut pos_ws = "".to_string();
+
+        loop {
+            // get rule
+            let rule = self.stack.pop();
+            match rule {
+                Some(Rule::Char) => {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
+                        let token = lexical_unit.get_token();
+                        match &token {
+                            Token::EndL => { return Ok(paths) }
+                            Token::Esc => {
+                                self.stack.push(Rule::EscapedChar);
+                            }
+                            Token::WhiteSpace => {
+                                self.stack.push(Rule::Char);
+                                pos_ws.push_str(&lexical_unit.get_lexime());
+                            }
+                            Token::OpenComm => {
+                                self.stack.push(Rule::Char);
+                                self.stack.push(Rule::CloseComm);
+                                self.parse_comment();
+                            }
+                            Token::OpenSquare => {
+                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                self.stack.push(Rule::Char);
+                                self.stack.push(Rule::CloseSquare);
+                            }
+                            Token::OpenCurl => {
+                                self.stack.push(Rule::Char);
+                                let math_return = self.parse_math();
+                                if let Ok(math) = math_return {
+                                    let mut new_paths = vec![];
+                                    for path in paths {
+                                        for number in &math {
+                                            let string_number = number.to_string();
+                                            let new_path = path.clone() + &string_number;
+                                            new_paths.push(new_path);
+                                        }
+                                    }
+                                    paths = new_paths;
+                                }
+                                else { return Err(()) }
+                            }
+                            _ => {
+                                self.stack.push(Rule::Char);
+                                let chars = lexical_unit.get_lexime();
+                                for path in &mut paths {
+                                    path.push_str(&pos_ws);
+                                    path.push_str(&chars);
+                                }
+                                pos_ws.clear();
+                            }
+                        }
+                    }
+                    else { return Err(()) }
+                },
+                Some(Rule::EscapedChar) => {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
+                        self.stack.push(Rule::Char);
+                        let chars = lexical_unit.get_lexime();
+                        for path in &mut paths {
+                            path.push_str(&pos_ws);
+                            path.push_str(&chars);
+                        }
+                        pos_ws.clear();
+                    }
+                },
+                Some(Rule::CloseSquare) => {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
+                        let token = lexical_unit.get_token();
+                        match &token {
+                            Token::EndL => { return Err(()) }
+                            Token::Esc => {
+                                self.stack.push(Rule::CloseSquareEscaped);
+                            }
+                            Token::WhiteSpace => {
+                                self.stack.push(Rule::CloseSquare);
+                                pos_ws.push_str(&lexical_unit.get_lexime());
+                            }
+                            Token::OpenComm => {
+                                self.stack.push(Rule::CloseSquare);
+                                self.stack.push(Rule::CloseComm);
+                                self.parse_comment();
+                            }
+                            Token::OpenSquare => {
+                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                self.stack.push(Rule::CloseSquare);
+                            }
+                            Token::Comma => {
+                                if escaped_closed_square > 0 {
+                                    self.stack.push(Rule::CloseSquare);
+                                    for list_item in &mut list_items {
+                                        list_item.push_str(&pos_ws);
+                                        list_item.push(',');
+                                    }
+                                    escaped_closed_square -= 1;
+                                }
+                                else {
+                                    pos_ws.clear();
+                                    if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                    list_items.append(&mut list_item);
+                                    list_item = vec!["".to_string()];
+                                    self.stack.push(Rule::CloseSquareNotComma);
+                                }
+                            },
+                            Token::CloseSquare => {
+                                pos_ws.clear();
+                                if escaped_closed_square > 0 {
+                                    self.stack.push(Rule::CloseSquare);
+                                    for list_item in &mut list_items {
+                                        list_item.push(']');
+                                    }
+                                }
+                                else {
+                                    let next_rule = self.stack.last();
+                                    if next_rule != Some(&Rule::CloseSquare) && next_rule != Some(&Rule::CloseSquareNotComma) {
+                                        if list_item.len() == 1 && list_item[0] != "".to_string() { list_items.append(&mut list_item); }
+                                        let mut new_paths = vec![];
+                                        for path in paths {
+                                            for list_item in &list_items {
+                                                let new_path = path.clone() + &list_item;
+                                                new_paths.push(new_path);
+                                            }
+                                        }
+                                        paths = new_paths;
+                                        list_items.clear();
+                                        list_item = vec!["".to_string()];
+                                    }
+                                    else { if let Err(()) = self.parse_clear_garbage() { return Err(()) } }
+                                }
+                            },
+                            Token::OpenCurl => {
+                                self.stack.push(Rule::CloseSquare);
+                                let math_return = self.parse_math();
+                                if let Ok(math) = math_return {
+                                    let mut new_list_items = vec![];
+                                    for list_item in list_items {
+                                        for number in &math {
+                                            let string_number = number.to_string();
+                                            let new_path = list_item.clone() + &string_number;
+                                            new_list_items.push(new_path);
+                                        }
+                                    }
+                                    list_items = new_list_items;
+                                }
+                                else { return Err(()) }
+                            }
+                            _ => {
+                                self.stack.push(Rule::CloseSquare);
+                                let chars = lexical_unit.get_lexime();
+                                for path_seg in &mut list_item {
+                                    path_seg.push_str(&pos_ws);
+                                    path_seg.push_str(&chars);
+                                }
+                                pos_ws.clear();
+                            }
+                        }
+                    }
+                    else { return Err(()) }
+                },
+                Some(Rule::CloseSquareNotComma) => {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
+                        let token = lexical_unit.get_token();
+                        match &token {
+                            Token::EndL => { return Err(()) }
+                            Token::Esc => {
+                                self.stack.push(Rule::CloseSquareEscaped);
+                            }
+                            Token::WhiteSpace => {
+                                self.stack.push(Rule::Char);
+                                pos_ws.push_str(&lexical_unit.get_lexime());
+                            }
+                            Token::OpenComm => {
+                                self.stack.push(Rule::CloseSquare);
+                                self.stack.push(Rule::CloseComm);
+                                self.parse_comment();
+                            }
+                            Token::OpenSquare => {
+                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                self.stack.push(Rule::CloseSquare);
+                                self.stack.push(Rule::CloseSquare);
+                            }
+                            Token::Comma => {
+                                if escaped_closed_square > 0 {
+                                    self.stack.push(Rule::CloseSquare);
+                                    for list_item in &mut list_items {
+                                        list_item.push_str(&pos_ws);
+                                        list_item.push(',');
+                                    }
+                                    escaped_closed_square -= 1;
+                                }
+                                else { return Err(()) }
+                            },
+                            Token::CloseSquare => {
+                                pos_ws.clear();
+                                if escaped_closed_square > 0 {
+                                    self.stack.push(Rule::CloseSquare);
+                                    for list_item in &mut list_items {
+                                        list_item.push(']');
+                                    }
+                                    escaped_closed_square -= 1;
+                                }
+                                else {
+                                    let next_rule = self.stack.last();
+                                    if next_rule != Some(&Rule::CloseSquare) && next_rule != Some(&Rule::CloseSquareNotComma) {
+                                        if list_item.len() == 1 && list_item[0] != "".to_string() { list_items.append(&mut list_item); }
+                                        let mut new_paths = vec![];
+                                        for path in paths {
+                                            for list_item in &list_items {
+                                                let new_path = path.clone() + &list_item;
+                                                new_paths.push(new_path);
+                                            }
+                                        }
+                                        paths = new_paths;
+                                        list_items.clear();
+                                        list_item = vec!["".to_string()];
+                                    }
+                                    else { if let Err(()) = self.parse_clear_garbage() { return Err(()) } }
+                                }
+                            },
+                            Token::OpenCurl => {
+                                self.stack.push(Rule::CloseSquare);
+                                let math_return = self.parse_math();
+                                if let Ok(math) = math_return {
+                                    let mut new_list_items = vec![];
+                                    for list_item in list_items {
+                                        for number in &math {
+                                            let string_number = number.to_string();
+                                            let new_path = list_item.clone() + &string_number;
+                                            new_list_items.push(new_path);
+                                        }
+                                    }
+                                    list_items = new_list_items;
+                                }
+                                else { return Err(()) }
+                            }
+                            _ => {
+                                self.stack.push(Rule::CloseSquare);
+                                let chars = lexical_unit.get_lexime();
+                                for path_seg in &mut list_item {
+                                    path_seg.push_str(&pos_ws);
+                                    path_seg.push_str(&chars);
+                                }
+                                pos_ws.clear();
+                            }
+                        }
+                    }
+                    else { return Err(()) }
+                },
+                Some(Rule::CloseSquareEscaped) => {
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
+                        if lexical_unit.get_token() == Token::OpenSquare { escaped_closed_square += 1; }
+                        self.stack.push(Rule::Char);
+                        let chars = lexical_unit.get_lexime();
+                        for path in &mut paths {
+                            path.push_str(&pos_ws);
+                            path.push_str(&chars);
+                        }
+                        pos_ws.clear();
+                    }
+                },
+                _ => { return Err(()) }
+            }
+        }
     }
     // TODO change these to automatically be in a math block
     fn parse_int(&mut self) -> Result<i32, ()> {
@@ -1041,10 +1300,10 @@ enum Rule {
     // individule assignment
     Line,
 
-    // assignment types
-    Path,
-    Int,
-    Float,
+    // intermediate for path
+    Char,
+    EscapedChar,
+    CloseSquareEscaped,
 
     // intermediate for a sub math block/number
     Term,
@@ -1055,8 +1314,4 @@ enum Rule {
     CloseSquare,
     CloseSquareNotComma,
     CloseParen,
-    Comma,
-    Op,
-    Asn,
-    EndL,
 }
