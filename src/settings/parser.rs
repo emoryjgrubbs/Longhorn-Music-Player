@@ -22,8 +22,14 @@ impl Parser {
                 parser.error_lines.push(parser.line_number);
                 parser.line_number += 1;
                 println!("Syntax Error");
+                // clear stack of remaining rules from the error line
+                while let Some(rule) = parser.stack.pop() {
+                    if rule == Rule::Config { parser.stack.push(Rule::Config); break }
+                }
+                // advance past tokens in the error line
                 while let Some(lexical_unit) = parser.tokens.pop_front() {
-                    if lexical_unit.get_token() == Token::OpenComm {}
+                    // continue to igore comments (comments can allow statements to cross lines)
+                    if lexical_unit.get_token() == Token::OpenComm { parser.parse_comment(); }
                     if lexical_unit.get_token() == Token::EndL { break }
                 }
             }
@@ -157,36 +163,42 @@ impl Parser {
         let mut paths = vec!["".to_string()];
         let mut list_items: Vec<String> = vec![];
         let mut list_item = vec!["".to_string()];
-        let mut escaped_closed_square = 0;
+        let mut not_comma = false;
         let mut pos_ws = "".to_string();
 
         loop {
-            println!("{}", escaped_closed_square);
             // get rule
             let rule = self.stack.pop();
             match rule {
+                // looking for a standard path segment
                 Some(Rule::Char) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         let token = lexical_unit.get_token();
                         match &token {
+                            // found the end of the line/statement
                             Token::EndL => { return Ok(paths) }
+                            // escaped characters are all just the lexime associated
                             Token::Esc => {
                                 self.stack.push(Rule::EscapedChar);
                             }
+                            // add whitespace to special string to possibly be added
                             Token::WhiteSpace => {
                                 self.stack.push(Rule::Char);
                                 pos_ws.push_str(&lexical_unit.get_lexime());
                             }
+                            // ignore comment and keep parsing
                             Token::OpenComm => {
                                 self.stack.push(Rule::Char);
                                 self.stack.push(Rule::CloseComm);
                                 self.parse_comment();
                             }
+                            // move to parsing path segments as elements of a list
                             Token::OpenSquare => {
                                 if let Err(()) = self.parse_clear_garbage() { return Err(()) }
                                 self.stack.push(Rule::Char);
                                 self.stack.push(Rule::CloseSquare);
                             }
+                            // enter math block, and append the parsed results
                             Token::OpenCurl => {
                                 self.stack.push(Rule::Char);
                                 let math_return = self.parse_math();
@@ -203,6 +215,7 @@ impl Parser {
                                 }
                                 else { return Err(()) }
                             }
+                            // anything else is a path character and should have its lexime added
                             _ => {
                                 self.stack.push(Rule::Char);
                                 let chars = lexical_unit.get_lexime();
@@ -216,6 +229,7 @@ impl Parser {
                     }
                     else { return Err(()) }
                 },
+                // just add lexime to path
                 Some(Rule::EscapedChar) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         self.stack.push(Rule::Char);
@@ -227,10 +241,14 @@ impl Parser {
                         pos_ws.clear();
                     }
                 },
+                // parse path segments as a list
                 Some(Rule::CloseSquare) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         let token = lexical_unit.get_token();
                         match &token {
+                            // the end of a line cannot appear in a list
+                            //  NOTE may just increment line count to allow lists to be split over
+                            //  multiple lines
                             Token::EndL => { return Err(()) }
                             Token::Esc => {
                                 self.stack.push(Rule::CloseSquareEscaped);
@@ -245,53 +263,42 @@ impl Parser {
                                 self.parse_comment();
                             }
                             Token::OpenSquare => {
+                                not_comma = false;
                                 if let Err(()) = self.parse_clear_garbage() { return Err(()) }
                                 self.stack.push(Rule::CloseSquare);
                             }
                             Token::Comma => {
-                                if escaped_closed_square > 0 {
-                                    self.stack.push(Rule::CloseSquare);
-                                    for path_seg in &mut list_item {
-                                        path_seg.push_str(&pos_ws);
-                                        path_seg.push(',');
+                                // simplify readability by combining the rules for lists
+                                //  allowing commas and disallowing
+                                if not_comma { return Err(()) }
+                                pos_ws.clear();
+                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                list_items.append(&mut list_item);
+                                list_item = vec!["".to_string()];
+                                not_comma = true;
+                                self.stack.push(Rule::CloseSquare);
+                            },
+                            Token::CloseSquare => {
+                                pos_ws.clear();
+                                not_comma = false;
+                                let next_rule = self.stack.last();
+                                if next_rule != Some(&Rule::CloseSquare) && next_rule != Some(&Rule::CloseSquareNotComma) {
+                                    if list_item.len() == 1 && list_item[0] != "".to_string() { list_items.append(&mut list_item); }
+                                    let mut new_paths = vec![];
+                                    for path in paths {
+                                        for list_item in &list_items {
+                                            let new_path = path.clone() + &list_item;
+                                            new_paths.push(new_path);
+                                        }
                                     }
-                                }
-                                else {
-                                    pos_ws.clear();
-                                    if let Err(()) = self.parse_clear_garbage() { return Err(()) }
-                                    list_items.append(&mut list_item);
+                                    paths = new_paths;
+                                    list_items.clear();
                                     list_item = vec!["".to_string()];
-                                    self.stack.push(Rule::CloseSquareNotComma);
                                 }
-                            },
-                            Token::CloseSquare => {
-                                pos_ws.clear();
-                                if escaped_closed_square > 0 {
-                                    self.stack.push(Rule::CloseSquare);
-                                    for path_seg in &mut list_item {
-                                        path_seg.push(']');
-                                    }
-                                    escaped_closed_square -= 1;
-                                }
-                                else {
-                                    let next_rule = self.stack.last();
-                                    if next_rule != Some(&Rule::CloseSquare) && next_rule != Some(&Rule::CloseSquareNotComma) {
-                                        if list_item.len() == 1 && list_item[0] != "".to_string() { list_items.append(&mut list_item); }
-                                        let mut new_paths = vec![];
-                                        for path in paths {
-                                            for list_item in &list_items {
-                                                let new_path = path.clone() + &list_item;
-                                                new_paths.push(new_path);
-                                            }
-                                        }
-                                        paths = new_paths;
-                                        list_items.clear();
-                                        list_item = vec!["".to_string()];
-                                    }
-                                    else { if let Err(()) = self.parse_clear_garbage() { return Err(()) } }
-                                }
+                                else { if let Err(()) = self.parse_clear_garbage() { return Err(()) } }
                             },
                             Token::OpenCurl => {
+                                not_comma = false;
                                 self.stack.push(Rule::CloseSquare);
                                 let math_return = self.parse_math();
                                 if let Ok(math) = math_return {
@@ -308,94 +315,7 @@ impl Parser {
                                 else { return Err(()) }
                             }
                             _ => {
-                                self.stack.push(Rule::CloseSquare);
-                                let chars = lexical_unit.get_lexime();
-                                for path_seg in &mut list_item {
-                                    path_seg.push_str(&pos_ws);
-                                    path_seg.push_str(&chars);
-                                }
-                                pos_ws.clear();
-                            }
-                        }
-                    }
-                    else { return Err(()) }
-                },
-                Some(Rule::CloseSquareNotComma) => {
-                    if let Some(lexical_unit) = self.tokens.pop_front() {
-                        let token = lexical_unit.get_token();
-                        match &token {
-                            Token::EndL => { return Err(()) }
-                            Token::Esc => {
-                                self.stack.push(Rule::CloseSquareEscaped);
-                            }
-                            Token::WhiteSpace => {
-                                self.stack.push(Rule::CloseSquareEscaped);
-                                pos_ws.push_str(&lexical_unit.get_lexime());
-                            }
-                            Token::OpenComm => {
-                                self.stack.push(Rule::CloseSquare);
-                                self.stack.push(Rule::CloseComm);
-                                self.parse_comment();
-                            }
-                            Token::OpenSquare => {
-                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
-                                self.stack.push(Rule::CloseSquare);
-                                self.stack.push(Rule::CloseSquare);
-                            }
-                            Token::Comma => {
-                                if escaped_closed_square > 0 {
-                                    self.stack.push(Rule::CloseSquare);
-                                    for path_seg in &mut list_item {
-                                        path_seg.push_str(&pos_ws);
-                                        path_seg.push(',');
-                                    }
-                                }
-                                else { return Err(()) }
-                            },
-                            Token::CloseSquare => {
-                                pos_ws.clear();
-                                if escaped_closed_square > 0 {
-                                    self.stack.push(Rule::CloseSquare);
-                                    for path_seg in &mut list_item {
-                                        path_seg.push(']');
-                                    }
-                                    escaped_closed_square -= 1;
-                                }
-                                else {
-                                    let next_rule = self.stack.last();
-                                    if next_rule != Some(&Rule::CloseSquare) && next_rule != Some(&Rule::CloseSquareNotComma) {
-                                        if list_item.len() == 1 && list_item[0] != "".to_string() { list_items.append(&mut list_item); }
-                                        let mut new_paths = vec![];
-                                        for path in paths {
-                                            for list_item in &list_items {
-                                                let new_path = path.clone() + &list_item;
-                                                new_paths.push(new_path);
-                                            }
-                                        }
-                                        paths = new_paths;
-                                        list_items.clear();
-                                        list_item = vec!["".to_string()];
-                                    }
-                                    else { if let Err(()) = self.parse_clear_garbage() { return Err(()) } }
-                                }
-                            },
-                            Token::OpenCurl => {
-                                self.stack.push(Rule::CloseSquare);
-                                let math_return = self.parse_math();
-                                if let Ok(math) = math_return {
-                                    let mut new_list_items = vec![];
-                                    for list_item in list_items {
-                                        for number in &math {
-                                            let string_number = number.to_string();
-                                            let new_path = list_item.clone() + &string_number;
-                                            new_list_items.push(new_path);
-                                        }
-                                    }
-                                    list_items = new_list_items;
-                                }
-                                else { return Err(()) }
-                            }
-                            _ => {
+                                not_comma = false;
                                 self.stack.push(Rule::CloseSquare);
                                 let chars = lexical_unit.get_lexime();
                                 for path_seg in &mut list_item {
@@ -410,7 +330,7 @@ impl Parser {
                 },
                 Some(Rule::CloseSquareEscaped) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
-                        if lexical_unit.get_token() == Token::OpenSquare { escaped_closed_square += 1; }
+                        not_comma = false;
                         self.stack.push(Rule::CloseSquare);
                         let chars = lexical_unit.get_lexime();
                         for path_seg in &mut list_item {
