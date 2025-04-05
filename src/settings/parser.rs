@@ -161,6 +161,7 @@ impl Parser {
         let mut pos_ws = "".to_string();
 
         loop {
+            println!("{}", escaped_closed_square);
             // get rule
             let rule = self.stack.pop();
             match rule {
@@ -250,11 +251,10 @@ impl Parser {
                             Token::Comma => {
                                 if escaped_closed_square > 0 {
                                     self.stack.push(Rule::CloseSquare);
-                                    for list_item in &mut list_items {
-                                        list_item.push_str(&pos_ws);
-                                        list_item.push(',');
+                                    for path_seg in &mut list_item {
+                                        path_seg.push_str(&pos_ws);
+                                        path_seg.push(',');
                                     }
-                                    escaped_closed_square -= 1;
                                 }
                                 else {
                                     pos_ws.clear();
@@ -268,9 +268,10 @@ impl Parser {
                                 pos_ws.clear();
                                 if escaped_closed_square > 0 {
                                     self.stack.push(Rule::CloseSquare);
-                                    for list_item in &mut list_items {
-                                        list_item.push(']');
+                                    for path_seg in &mut list_item {
+                                        path_seg.push(']');
                                     }
+                                    escaped_closed_square -= 1;
                                 }
                                 else {
                                     let next_rule = self.stack.last();
@@ -328,7 +329,7 @@ impl Parser {
                                 self.stack.push(Rule::CloseSquareEscaped);
                             }
                             Token::WhiteSpace => {
-                                self.stack.push(Rule::Char);
+                                self.stack.push(Rule::CloseSquareEscaped);
                                 pos_ws.push_str(&lexical_unit.get_lexime());
                             }
                             Token::OpenComm => {
@@ -344,11 +345,10 @@ impl Parser {
                             Token::Comma => {
                                 if escaped_closed_square > 0 {
                                     self.stack.push(Rule::CloseSquare);
-                                    for list_item in &mut list_items {
-                                        list_item.push_str(&pos_ws);
-                                        list_item.push(',');
+                                    for path_seg in &mut list_item {
+                                        path_seg.push_str(&pos_ws);
+                                        path_seg.push(',');
                                     }
-                                    escaped_closed_square -= 1;
                                 }
                                 else { return Err(()) }
                             },
@@ -356,8 +356,8 @@ impl Parser {
                                 pos_ws.clear();
                                 if escaped_closed_square > 0 {
                                     self.stack.push(Rule::CloseSquare);
-                                    for list_item in &mut list_items {
-                                        list_item.push(']');
+                                    for path_seg in &mut list_item {
+                                        path_seg.push(']');
                                     }
                                     escaped_closed_square -= 1;
                                 }
@@ -411,11 +411,11 @@ impl Parser {
                 Some(Rule::CloseSquareEscaped) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
                         if lexical_unit.get_token() == Token::OpenSquare { escaped_closed_square += 1; }
-                        self.stack.push(Rule::Char);
+                        self.stack.push(Rule::CloseSquare);
                         let chars = lexical_unit.get_lexime();
-                        for path in &mut paths {
-                            path.push_str(&pos_ws);
-                            path.push_str(&chars);
+                        for path_seg in &mut list_item {
+                            path_seg.push_str(&pos_ws);
+                            path_seg.push_str(&chars);
                         }
                         pos_ws.clear();
                     }
