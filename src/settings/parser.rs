@@ -407,7 +407,7 @@ impl Parser<'_> {
         self.stack.push(Rule::CloseMath);
         match self.parse_math() {
             Ok(number) => {
-                int = number[number.len()-1] as i32;
+                int = number[number.len()-1].round() as i32;
             },
             Err(message) => { return Err(message) },
         }
