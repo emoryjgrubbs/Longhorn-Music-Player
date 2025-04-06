@@ -4,24 +4,24 @@ use super::lexer::Token;
 use std::collections::VecDeque;
 use std::vec;
 
-pub struct Parser {
+pub struct Parser<'p> {
     settings: Settings,
-    sub_files: Vec<String>,
+    sub_files: &'p mut Vec<String>,
     stack: Vec<Rule>,
     tokens: VecDeque<LexicalUnit>,
     line_number: i32,
     error_lines: Vec<i32>
 }
-impl Parser {
-    pub fn process_tokens(tokens: VecDeque<LexicalUnit>) -> Result<Parser, ()> {
-        let mut parser = Parser { settings: Settings::new(), sub_files: vec![], stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
+impl Parser<'_> {
+    pub fn process_tokens(sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>) -> Result<Vec<i32>, ()> {
+        let mut parser = Parser { settings: Settings::new(), sub_files, stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
             if result == Some(Status::LineError) {
                 parser.error_lines.push(parser.line_number);
                 parser.line_number += 1;
-                println!("Syntax Error");
+                println!("{:3}. Syntax Error", &parser.line_number);
                 // clear stack of remaining rules from the error line
                 while let Some(rule) = parser.stack.pop() {
                     if rule == Rule::Config { parser.stack.push(Rule::Config); break }
@@ -33,9 +33,9 @@ impl Parser {
                     if lexical_unit.get_token() == Token::EndL { break }
                 }
             }
-            if result == Some(Status::Done) { println!("Error Lines: {:?}", parser.error_lines); break }
+            if result == Some(Status::Done) { break }
         }
-        Ok(parser)
+        Ok(parser.error_lines)
     }
 
     fn parse_line(&mut self, rule: Option<Rule>) -> Option<Status> {
@@ -70,7 +70,7 @@ impl Parser {
                         Token::File => {
                             if let Ok(result) = self.parse_path() {
                                 for file in result {
-                                    println!("New File: \"{}\"", &file);
+                                    println!("{:3}. New File: \"{}\"", &self.line_number, &file);
                                     self.sub_files.push(file);
                                 }
                                 self.line_number += 1;
@@ -81,7 +81,7 @@ impl Parser {
                         Token::LibPath => {
                             if let Ok(result) = self.parse_path() {
                                 for path in result {
-                                    println!("New Lib Path: \"{}\"", &path);
+                                    println!("{:3}. New Lib Path: \"{}\"", &self.line_number, &path);
                                     self.settings.library_paths.push(path);
                                 }
                                 self.line_number += 1;
@@ -91,7 +91,7 @@ impl Parser {
                         },
                         Token::MaxHist => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Max Hist: {}", &result);
+                                println!("{:3}. New Max Hist: {}", &self.line_number, &result);
                                 self.settings.max_history = result;
                                 self.line_number += 1;
                                 None
@@ -100,7 +100,7 @@ impl Parser {
                         },
                         Token::TopSngLen => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Top Sng Len: {}", &result);
+                                println!("{:3}. New Top Sng Len: {}", &self.line_number, &result);
                                 self.settings.top_songs_len = result;
                                 self.line_number += 1;
                                 None
@@ -109,7 +109,7 @@ impl Parser {
                         },
                         Token::TopAlbLen => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Top Alb Len: {}", &result);
+                                println!("{:3}. New Top Alb Len: {}", &self.line_number, &result);
                                 self.settings.top_albums_len = result;
                                 self.line_number += 1;
                                 None
@@ -118,7 +118,7 @@ impl Parser {
                         },
                         Token::TopArtLen => {
                             if let Ok(result) = self.parse_int() {
-                                println!("New Top Art Len: {}", &result);
+                                println!("{:3}. New Top Art Len: {}", &self.line_number, &result);
                                 self.settings.top_artists_len = result;
                                 self.line_number += 1;
                                 None
@@ -127,7 +127,7 @@ impl Parser {
                         },
                         Token::TopDecay => {
                             if let Ok(result) = self.parse_float() {
-                                println!("New Top Decay Rate: {}", &result);
+                                println!("{:3}. New Top Decay Rate: {}", &self.line_number, &result);
                                 self.settings.top_decay = result;
                                 self.line_number += 1;
                                 None
@@ -136,7 +136,7 @@ impl Parser {
                         },
                         // empty line
                         Token::EndL => {
-                            println!("Empty Line");
+                            println!("{:3}. Empty", &self.line_number);
                             self.line_number += 1;
                             None
                         }

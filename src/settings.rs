@@ -21,13 +21,24 @@ impl Settings {
 
     pub fn read_config(&mut self, optional_path: Option<&str>) {
         let mut file_path_stack = vec![];
-        if let Some(path) = optional_path { file_path_stack.push(path); }
-        else { file_path_stack.push("./Longhorn.conf"); }
+        if let Some(path) = optional_path { file_path_stack.push(path.to_string()); }
+        else { file_path_stack.push("./Longhorn.conf".to_string()); }
         // add way to set custom initial config file in future
         while let Some(path) = file_path_stack.pop() {
-            let lexer_result = Lexer::process_file(path);
+            let lexer_result = Lexer::process_file(&path);
             if let Ok(lexical_units) = lexer_result {
-                Parser::process_tokens(lexical_units);
+                let len = path.len();
+                let empty = "";
+                println!("{}\n{:-<len$}", path, empty);
+                let parser_result = Parser::process_tokens(&mut file_path_stack, lexical_units);
+                if let Ok(error_lines) = parser_result {
+                    if error_lines.len() > 0 {
+                        println!("{:-<len$}\nError Lines: {:?}\n", empty, &error_lines);
+                    }
+                    else {
+                        println!("{:-<len$}\nError Lines: NONE\n", empty);
+                    }
+                }
             }
             // syntax error in 'path'
             else { }
