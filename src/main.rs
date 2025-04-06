@@ -26,7 +26,7 @@ mod player;
 
 fn main() {
     let mut user_settings = Settings::new();
-    user_settings.read_config(None);
+    user_settings.read_config(None, true);
 
     let mut queue = player::Queue::new(user_settings.history_len());
 

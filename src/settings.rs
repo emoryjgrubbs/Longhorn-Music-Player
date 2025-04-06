@@ -20,7 +20,7 @@ impl Settings {
         Settings { max_history: 50, library_paths: vec!["~/Music".to_string()], top_songs_len: 100, top_albums_len: 50, top_artists_len: 25, top_decay: 0.2 }
     }
 
-    pub fn read_config(&mut self, optional_path: Option<&str>) {
+    pub fn read_config(&mut self, optional_path: Option<&str>, debug_flag: bool) {
         self.library_paths.clear();
         let mut file_path_stack = vec![];
         if let Some(path) = optional_path { file_path_stack.push(path.to_string()); }
@@ -33,8 +33,8 @@ impl Settings {
             match lexer_result {
                 Ok(lexical_units) => {
                     let len = path.len();
-                    println!("\n{}\n{:-<len$}", path, empty);
-                    let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units);
+                    if debug_flag { println!("\n{}\n{:-<len$}", path, empty); }
+                    let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units, debug_flag);
                     if let Ok(errors) = parser_result {
                         if errors.len() > 0 {
                             for error in errors {
@@ -47,12 +47,10 @@ impl Settings {
                 Err(e) => {
                     match e.kind() {
                         std::io::ErrorKind::NotFound => {
-                            println!("No File Found At: {}\n", &path);
                             let error = "No File Found At ".to_string() + &path;
                             config_errors.push(error);
                         }
                         _ => {
-                            println!("UNEXPECTED ERROR ENCOUNTERED!\n");
                             let error = "UNEXPECTED ERROR ENCOUNTERED IN ".to_string() + &path;
                             config_errors.push(error);
                         }
@@ -60,9 +58,12 @@ impl Settings {
                 },
             }
         }
-        println!("\nConfig Errors\n{:-<13}", empty);
-        for error in config_errors {
-            println!("{}", error);
+        // could add another flag/make debug_flag numeric so only this is displayed
+        if debug_flag {
+            println!("\nConfig Errors\n{:-<13}", empty);
+            for error in config_errors {
+                println!("{}", error);
+            }
         }
     }
 

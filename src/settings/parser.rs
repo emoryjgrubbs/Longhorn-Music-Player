@@ -24,18 +24,19 @@ pub struct Parser<'p> {
     stack: Vec<Rule>,
     tokens: VecDeque<LexicalUnit>,
     line_number: i32,
-    errors: Vec<Error>
+    errors: Vec<Error>,
+    debug_flag: bool
 }
 impl Parser<'_> {
-    pub fn process_tokens(settings: &mut Settings, sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>) -> Result<Vec<Error>, ()> {
-        let mut parser = Parser { settings, sub_files, stack: vec![Rule::Config], tokens , line_number: 1, errors: vec![] };
+    pub fn process_tokens(settings: &mut Settings, sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>, debug_flag: bool) -> Result<Vec<Error>, ()> {
+        let mut parser = Parser { settings, sub_files, stack: vec![Rule::Config], tokens , line_number: 1, errors: vec![], debug_flag };
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
             if let Some(Status::LineError(message)) = result.clone() {
                 let error = Error { line_number: parser.line_number, message };
                 parser.line_number += 1;
-                println!("{:3}. Syntax Error: {}", &error.line_number, &error.message);
+                if debug_flag { println!("{:3}. Syntax Error: {}", &error.line_number, &error.message); }
                 parser.errors.push(error);
                 // clear stack of remaining rules from the error line
                 while let Some(rule) = parser.stack.pop() {
@@ -87,7 +88,7 @@ impl Parser<'_> {
                             match path_result {
                                 Ok(paths) => {
                                     for path in paths {
-                                        println!("{:3}. New File: \"{}\"", &self.line_number, &path);
+                                        if self.debug_flag { println!("{:3}. New File: \"{}\"", &self.line_number, &path); }
                                         self.sub_files.push(path);
                                     }
                                     self.line_number += 1;
@@ -103,7 +104,7 @@ impl Parser<'_> {
                             match path_result {
                                 Ok(paths) => {
                                     for path in paths {
-                                        println!("{:3}. New Lib Path: \"{}\"", &self.line_number, &path);
+                                        if self.debug_flag { println!("{:3}. New Lib Path: \"{}\"", &self.line_number, &path); }
                                         self.settings.library_paths.push(path);
                                     }
                                     self.line_number += 1;
@@ -118,7 +119,7 @@ impl Parser<'_> {
                             let int_result = self.parse_int();
                             match int_result {
                                 Ok(number) => {
-                                    println!("{:3}. New Max Hist: {}", &self.line_number, &number);
+                                    if self.debug_flag { println!("{:3}. New Max Hist: {}", &self.line_number, &number); }
                                     self.settings.max_history = number;
                                     self.line_number += 1;
                                     None
@@ -132,7 +133,7 @@ impl Parser<'_> {
                             let int_result = self.parse_int();
                             match int_result {
                                 Ok(number) => {
-                                    println!("{:3}. New Top Sng Len: {}", &self.line_number, &number);
+                                    if self.debug_flag { println!("{:3}. New Top Sng Len: {}", &self.line_number, &number); }
                                     self.settings.top_songs_len = number;
                                     self.line_number += 1;
                                     None
@@ -146,7 +147,7 @@ impl Parser<'_> {
                             let int_result = self.parse_int();
                             match int_result {
                                 Ok(number) => {
-                                    println!("{:3}. New Top Alb Len: {}", &self.line_number, &number);
+                                    if self.debug_flag { println!("{:3}. New Top Alb Len: {}", &self.line_number, &number); }
                                     self.settings.top_albums_len = number;
                                     self.line_number += 1;
                                     None
@@ -160,7 +161,7 @@ impl Parser<'_> {
                             let int_result = self.parse_int();
                             match int_result {
                                 Ok(number) => {
-                                    println!("{:3}. New Top Art Len: {}", &self.line_number, &number);
+                                    if self.debug_flag { println!("{:3}. New Top Art Len: {}", &self.line_number, &number); }
                                     self.settings.top_artists_len = number;
                                     self.line_number += 1;
                                     None
@@ -174,7 +175,7 @@ impl Parser<'_> {
                             let float_result = self.parse_float();
                             match float_result {
                                 Ok(number) => {
-                                    println!("{:3}. New Top Decay Rate: {}", &self.line_number, &number);
+                                    if self.debug_flag { println!("{:3}. New Top Decay Rate: {}", &self.line_number, &number); }
                                     self.settings.top_decay = number;
                                     self.line_number += 1;
                                     None
@@ -186,7 +187,7 @@ impl Parser<'_> {
                         },
                         // empty line
                         Token::EndL => {
-                            println!("{:3}. Empty", &self.line_number);
+                            if self.debug_flag { println!("{:3}. Empty", &self.line_number); }
                             self.line_number += 1;
                             None
                         }
@@ -428,7 +429,7 @@ impl Parser<'_> {
         Ok(float)
     }
 
-    //  lines: 431 - 711 |NOTE| keep up to date
+    //  lines: 432 - 712 |NOTE| keep up to date
     fn parse_math(&mut self) -> Result<Vec<f64>, String> {
         self.stack.push(Rule::Term);
 
@@ -738,7 +739,7 @@ impl Parser<'_> {
             }
         }
     }
-    //  lines: 712 - 1057 |NOTE| keep up to date
+    //  lines: 742 - 1087 |NOTE| keep up to date
     fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, String> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
