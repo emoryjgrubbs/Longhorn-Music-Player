@@ -525,35 +525,64 @@ impl Parser<'_> {
                 },
                 // return from the implicit int/float math block
                 Some(Rule::CloseMath) => {
-                    let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
-                    // if the result is valid push it to the stack
-                    //  5 + (2 * 3) -> 5 + 6
-                    match level_result {
-                        Ok(level_stack) => {
-                            let len = level_stack.len();
-                            for term in level_stack {
-                                term_stack.push(term);
-                                term_len_stack.push(0);
+                    // there is another token
+                    if let Some(lexical_unit) = self.tokens.pop_front() {
+                        // the token is a operator (add the ending bracket back to the stack
+                        //  along with another term
+                        if [Token::Plus,
+                            Token::Dash,
+                            Token::Star,
+                            Token::Slash,
+                            Token::Carrot,
+                            Token::Percent].contains(&lexical_unit.get_token()) {
+                            level_len += 1;
+                            self.stack.push(Rule::CloseMath);
+                            self.stack.push(Rule::Term);
+                            op_stack.push(lexical_unit.get_token());
+                        }
+                        else { 
+                            self.tokens.push_front(lexical_unit);
+                            // calculate the value of the bracketed expression
+                            let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
+                            // if the result is valid push it to the stack
+                            //  5 + (2 * 3) -> 5 + 6
+                            match level_result {
+                                Ok(level_stack) => {
+                                    let len = level_stack.len();
+                                    for term in level_stack {
+                                        term_stack.push(term);
+                                        term_len_stack.push(0);
+                                    }
+                                    if len > 1 {
+                                        term_len_stack.push(len);
+                                    }
+                                }
+                                Err(message) => { return Err(message) }
                             }
-                            if len > 1 {
-                                term_len_stack.push(len);
+                            // get the length of that level's expression
+                            if let Some(len) = len_stack.pop() {
+                                level_len = len;
+                            }
+                            // if there is no length to pop, check if the math block has reached a
+                            //  valid end
+                            else {
+                                if let Some(len) = term_len_stack.pop() {
+                                    if len == 0 && term_stack.len() != 1 {
+                                        return Err("Unexpected Term List When Returning From Math".to_string())
+                                    }
+                                    if len != 0 && term_stack.len() != len {
+                                        return Err("Unexpected Number of Terms in List When Returning From Math".to_string())
+                                    }
+                                    if op_stack.len() != 0 {
+                                        return Err("Unexpected Operators in Stack When Returning From Math".to_string())
+                                    }
+                                    return Ok(term_stack)
+                                }
+                                else { return Err("Unexpected End of Term Len Stack When Returning From Math".to_string()) }
                             }
                         }
-                        Err(message) => { return Err(message) }
                     }
-                    if let Some(len) = term_len_stack.pop() {
-                        if len == 0 && term_stack.len() != 1 {
-                            return Err("Unexpected Term List When Returning From Math".to_string())
-                        }
-                        if len != 0 && term_stack.len() != len {
-                            return Err("Unexpected Number of Terms in List When Returning From Math".to_string())
-                        }
-                        if op_stack.len() != 0 {
-                            return Err("Unexpected Operators in Stack When Returning From Math".to_string())
-                        }
-                        return Ok(term_stack)
-                    }
-                    else { return Err("Unexpected End of Term Len Stack When Returning From Math".to_string()) }
+                    else { return Err("Unexpected End of File While Parsing Math".to_string()) }
                 },
                 // return from curly brace as a term (may end math block)
                 Some(Rule::CloseCurl) => {
