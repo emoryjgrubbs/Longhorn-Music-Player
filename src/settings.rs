@@ -6,6 +6,7 @@ use lexer::Lexer;
 mod parser;
 use parser::Parser;
 
+#[derive(Debug)]
 pub struct Settings {
     max_history: i32,
     library_paths: Vec<String>,
@@ -20,6 +21,7 @@ impl Settings {
     }
 
     pub fn read_config(&mut self, optional_path: Option<&str>) {
+        self.library_paths.clear();
         let mut file_path_stack = vec![];
         if let Some(path) = optional_path { file_path_stack.push(path.to_string()); }
         else { file_path_stack.push("./Longhorn.conf".to_string()); }
@@ -30,7 +32,7 @@ impl Settings {
                 let len = path.len();
                 let empty = "";
                 println!("{}\n{:-<len$}", path, empty);
-                let parser_result = Parser::process_tokens(&mut file_path_stack, lexical_units);
+                let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units);
                 if let Ok(error_lines) = parser_result {
                     if error_lines.len() > 0 {
                         println!("{:-<len$}\nError Lines: {:?}\n", empty, &error_lines);
@@ -40,10 +42,10 @@ impl Settings {
                     }
                 }
             }
-            // syntax error in 'path'
-            else { }
+            else { 
+                println!("{:?}", lexer_result);
+            }
         }
-
     }
 
     pub fn history_len(&self) -> i32 {

@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::vec;
 
 pub struct Parser<'p> {
-    settings: Settings,
+    settings: &'p mut Settings,
     sub_files: &'p mut Vec<String>,
     stack: Vec<Rule>,
     tokens: VecDeque<LexicalUnit>,
@@ -13,8 +13,8 @@ pub struct Parser<'p> {
     error_lines: Vec<i32>
 }
 impl Parser<'_> {
-    pub fn process_tokens(sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>) -> Result<Vec<i32>, ()> {
-        let mut parser = Parser { settings: Settings::new(), sub_files, stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
+    pub fn process_tokens(settings: &mut Settings, sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>) -> Result<Vec<i32>, ()> {
+        let mut parser = Parser { settings, sub_files, stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
