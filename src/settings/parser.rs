@@ -428,7 +428,7 @@ impl Parser<'_> {
         Ok(float)
     }
 
-    //  lines: 422 - 702 |NOTE| keep up to date
+    //  lines: 431 - 711 |NOTE| keep up to date
     fn parse_math(&mut self) -> Result<Vec<f64>, String> {
         self.stack.push(Rule::Term);
 
@@ -709,7 +709,7 @@ impl Parser<'_> {
             }
         }
     }
-    //  lines: 703 - 848 |NOTE| keep up to date
+    //  lines: 712 - 1057 |NOTE| keep up to date
     fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, String> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
