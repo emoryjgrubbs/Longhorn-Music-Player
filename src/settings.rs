@@ -28,22 +28,31 @@ impl Settings {
         // add way to set custom initial config file in future
         while let Some(path) = file_path_stack.pop() {
             let lexer_result = Lexer::process_file(&path);
-            if let Ok(lexical_units) = lexer_result {
-                let len = path.len();
-                let empty = "";
-                println!("{}\n{:-<len$}", path, empty);
-                let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units);
-                if let Ok(error_lines) = parser_result {
-                    if error_lines.len() > 0 {
-                        println!("{:-<len$}\nError Lines: {:?}\n", empty, &error_lines);
+            match lexer_result {
+                Ok(lexical_units) => {
+                    let len = path.len();
+                    let empty = "";
+                    println!("{}\n{:-<len$}", path, empty);
+                    let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units);
+                    if let Ok(error_lines) = parser_result {
+                        if error_lines.len() > 0 {
+                            println!("{:-<len$}\nError Lines: {:?}\n", empty, &error_lines);
+                        }
+                        else {
+                            println!("{:-<len$}\nError Lines: NONE\n", empty);
+                        }
                     }
-                    else {
-                        println!("{:-<len$}\nError Lines: NONE\n", empty);
+                },
+                Err(e) => {
+                    match e.kind() {
+                        std::io::ErrorKind::NotFound => {
+                            println!("No File Found At: {}\n", &path);
+                        }
+                        _ => {
+                            println!("UNKNOWN ERROR ENCOUNTERED!\n");
+                        }
                     }
-                }
-            }
-            else { 
-                println!("{:?}", lexer_result);
+                },
             }
         }
     }
