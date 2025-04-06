@@ -264,7 +264,7 @@ impl Machine{
                 else { self.string_machine(symbol) }
             },
             FileState::Fil => {
-                if symbol == 'e' || symbol == 'e' {
+                if symbol == 'E' || symbol == 'e' {
                     self.state = SubMachine::StartMachine;
                     Some(Token::File)
                 }
