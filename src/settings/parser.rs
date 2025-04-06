@@ -201,6 +201,7 @@ impl Parser {
                             // enter math block, and append the parsed results
                             Token::OpenCurl => {
                                 self.stack.push(Rule::Char);
+                                self.stack.push(Rule::CloseCurl);
                                 let math_return = self.parse_math();
                                 if let Ok(math) = math_return {
                                     let mut new_paths = vec![];
@@ -300,6 +301,7 @@ impl Parser {
                             Token::OpenCurl => {
                                 not_comma = false;
                                 self.stack.push(Rule::CloseSquare);
+                                self.stack.push(Rule::CloseCurl);
                                 let math_return = self.parse_math();
                                 if let Ok(math) = math_return {
                                     let mut new_list_items = vec![];
@@ -348,58 +350,9 @@ impl Parser {
     fn parse_int(&mut self) -> Result<i32, ()> {
         if let Err(()) = self.parse_asn() { return Err(())}
         let int;
-        if let Some(lexical_unit) = self.tokens.pop_front() {
-            let mut number = lexical_unit.get_lexime();
-            match lexical_unit.get_token() {
-                Token::Num => {
-                    if let Ok(result) = self.parse_num() {
-                        number.push_str(&result);
-                        if let Ok(parsed_result) = number.parse::<f64>() { int = parsed_result.round() as i32; }
-                        else { return Err(()) }
-                    }
-                    else { return Err(()) }
-                },
-                Token::Dot => {
-                    if let Ok(result) = self.parse_decimal() {
-                        number.push_str(&result);
-                        if let Ok(parsed_result) = number.parse::<f64>() { int = parsed_result.round() as i32; }
-                        else { return Err(()) }
-                    }
-                    else { return Err(()) }
-                },
-                Token::Dash => { 
-                    if let Some(lexical_unit) = self.tokens.pop_front() {
-                        number.push_str(&lexical_unit.get_lexime());
-                        match lexical_unit.get_token() {
-                            Token::Num => {
-                                if let Ok(result) = self.parse_num() {
-                                    number.push_str(&result);
-                                    if let Ok(parsed_number) = number.parse::<f64>() { int = parsed_number.round() as i32; }
-                                    else { return Err(()) }
-                                }
-                                else { return Err(()) }
-                            },
-                            Token::Dot => {
-                                if let Ok(result) = self.parse_decimal() {
-                                    number.push_str(&result);
-                                    if let Ok(parsed_number) = number.parse::<f64>() { int = parsed_number.round() as i32; }
-                                    else { return Err(()) }
-                                }
-                                else { return Err(()) }
-                            },
-                            _ => { return Err(()) },
-                        }
-                    }
-                    else { return Err(()) }
-                },
-                Token::OpenCurl => {
-                    if let Ok(result) = self.parse_math() {
-                        int = result[result.len()-1] as i32;
-                    }
-                    else { return Err(()) }
-                },
-                _ => { return Err(()) },
-            }
+        self.stack.push(Rule::CloseMath);
+        if let Ok(result) = self.parse_math() {
+            int = result[result.len()-1] as i32;
         }
         else { return Err(()) }
         if let Err(()) = self.parse_to_endl() { return Err(()) }
@@ -408,58 +361,9 @@ impl Parser {
     fn parse_float(&mut self) -> Result<f64, ()> {
         if let Err(()) = self.parse_asn() { return Err(())}
         let float;
-        if let Some(lexical_unit) = self.tokens.pop_front() {
-            let mut number = lexical_unit.get_lexime();
-            match lexical_unit.get_token() {
-                Token::Num => {
-                    if let Ok(result) = self.parse_num() {
-                        number.push_str(&result);
-                        if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                        else { return Err(()) }
-                    }
-                    else { return Err(()) }
-                },
-                Token::Dot => {
-                    if let Ok(result) = self.parse_decimal() {
-                        number.push_str(&result);
-                        if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                        else { return Err(()) }
-                    }
-                    else { return Err(()) }
-                },
-                Token::Dash => { 
-                    if let Some(lexical_unit) = self.tokens.pop_front() {
-                        number.push_str(&lexical_unit.get_lexime());
-                        match lexical_unit.get_token() {
-                            Token::Num => {
-                                if let Ok(result) = self.parse_num() {
-                                    number.push_str(&result);
-                                    if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                                    else { return Err(()) }
-                                }
-                                else { return Err(()) }
-                            },
-                            Token::Dot => {
-                                if let Ok(result) = self.parse_decimal() {
-                                    number.push_str(&result);
-                                    if let Ok(parsed_number) = number.parse::<f64>() { float = parsed_number; }
-                                    else { return Err(())}
-                                }
-                                else { return Err(())}
-                            },
-                            _ => { return Err(()) },
-                        }
-                    }
-                    else { return Err(()) }
-                },
-                Token::OpenCurl => {
-                    if let Ok(result) = self.parse_math() {
-                        float = result[result.len()-1];
-                    }
-                    else { return Err(())}
-                },
-                _ => { return Err(())},
-            }
+        self.stack.push(Rule::CloseMath);
+        if let Ok(result) = self.parse_math() {
+            float = result[result.len()-1];
         }
         else { return Err(()) }
         if let Err(()) = self.parse_to_endl() { return Err(()) }
@@ -468,7 +372,6 @@ impl Parser {
 
     //  lines: 290 - 523 |NOTE| keep up to date
     fn parse_math(&mut self) -> Result<Vec<f64>, ()> {
-        self.stack.push(Rule::CloseCurl);
         self.stack.push(Rule::Term);
 
         // operators
@@ -553,6 +456,35 @@ impl Parser {
                             _ => { return Err(()) }
                         }
                     }
+                },
+                // return from the implicit int/float math block
+                Some(Rule::CloseMath) => {
+                    let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
+                    // if the result is valid push it to the stack
+                    //  5 + (2 * 3) -> 5 + 6
+                    if let Ok(level_stack) = level_result {
+                        let len = level_stack.len();
+                        for term in level_stack {
+                            term_stack.push(term);
+                            term_len_stack.push(0);
+                        }
+                        if len > 1 {
+                            term_len_stack.push(len);
+                        }
+                    }
+                    if let Some(len) = term_len_stack.pop() {
+                        if len == 0 && term_stack.len() != 1 {
+                            return Err(())
+                        }
+                        if len != 0 && term_stack.len() != len {
+                            return Err(())
+                        }
+                        if op_stack.len() != 0 {
+                            return Err(())
+                        }
+                        return Ok(term_stack)
+                    }
+                    else { return Err(()) }
                 },
                 // return from curly brace as a term (may end math block)
                 Some(Rule::CloseCurl) => {
@@ -1227,6 +1159,7 @@ enum Rule {
 
     // intermediate for a sub math block/number
     Term,
+    CloseMath,
 
     // terminals
     CloseComm,
