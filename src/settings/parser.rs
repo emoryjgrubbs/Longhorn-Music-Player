@@ -4,24 +4,39 @@ use super::lexer::Token;
 use std::collections::VecDeque;
 use std::vec;
 
+#[derive(Debug)]
+pub struct Error {
+    line_number: i32,
+    message: String,
+}
+impl Error {
+    pub fn get_line(&self) -> i32 {
+        self.line_number.clone()
+    }
+    pub fn get_message(&self) -> String{
+        self.message.clone()
+    }
+}
+
 pub struct Parser<'p> {
     settings: &'p mut Settings,
     sub_files: &'p mut Vec<String>,
     stack: Vec<Rule>,
     tokens: VecDeque<LexicalUnit>,
     line_number: i32,
-    error_lines: Vec<i32>
+    errors: Vec<Error>
 }
 impl Parser<'_> {
-    pub fn process_tokens(settings: &mut Settings, sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>) -> Result<Vec<i32>, ()> {
-        let mut parser = Parser { settings, sub_files, stack: vec![Rule::Config], tokens , line_number: 1, error_lines: vec![] };
+    pub fn process_tokens(settings: &mut Settings, sub_files: &mut Vec<String>, tokens: VecDeque<LexicalUnit>) -> Result<Vec<Error>, ()> {
+        let mut parser = Parser { settings, sub_files, stack: vec![Rule::Config], tokens , line_number: 1, errors: vec![] };
         loop {
             let rule = parser.stack.pop();
             let result = parser.parse_line(rule);
-            if result == Some(Status::LineError) {
-                parser.error_lines.push(parser.line_number);
+            if let Some(Status::LineError(message)) = result.clone() {
+                let error = Error { line_number: parser.line_number, message };
                 parser.line_number += 1;
-                println!("{:3}. Syntax Error", &parser.line_number);
+                println!("{:3}. Syntax Error: {}", &error.line_number, &error.message);
+                parser.errors.push(error);
                 // clear stack of remaining rules from the error line
                 while let Some(rule) = parser.stack.pop() {
                     if rule == Rule::Config { parser.stack.push(Rule::Config); break }
@@ -35,7 +50,7 @@ impl Parser<'_> {
             }
             if result == Some(Status::Done) { break }
         }
-        Ok(parser.error_lines)
+        Ok(parser.errors)
     }
 
     fn parse_line(&mut self, rule: Option<Rule>) -> Option<Status> {
@@ -68,71 +83,106 @@ impl Parser<'_> {
                         },
                         // valid line assignment
                         Token::File => {
-                            if let Ok(result) = self.parse_path() {
-                                for file in result {
-                                    println!("{:3}. New File: \"{}\"", &self.line_number, &file);
-                                    self.sub_files.push(file);
-                                }
-                                self.line_number += 1;
-                                None
+                            let path_result = self.parse_path();
+                            match path_result {
+                                Ok(paths) => {
+                                    for path in paths {
+                                        println!("{:3}. New File: \"{}\"", &self.line_number, &path);
+                                        self.sub_files.push(path);
+                                    }
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         Token::LibPath => {
-                            if let Ok(result) = self.parse_path() {
-                                for path in result {
-                                    println!("{:3}. New Lib Path: \"{}\"", &self.line_number, &path);
-                                    self.settings.library_paths.push(path);
-                                }
-                                self.line_number += 1;
-                                None
+                            let path_result = self.parse_path();
+                            match path_result {
+                                Ok(paths) => {
+                                    for path in paths {
+                                        println!("{:3}. New Lib Path: \"{}\"", &self.line_number, &path);
+                                        self.settings.library_paths.push(path);
+                                    }
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         Token::MaxHist => {
-                            if let Ok(result) = self.parse_int() {
-                                println!("{:3}. New Max Hist: {}", &self.line_number, &result);
-                                self.settings.max_history = result;
-                                self.line_number += 1;
-                                None
+                            let int_result = self.parse_int();
+                            match int_result {
+                                Ok(number) => {
+                                    println!("{:3}. New Max Hist: {}", &self.line_number, &number);
+                                    self.settings.max_history = number;
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         Token::TopSngLen => {
-                            if let Ok(result) = self.parse_int() {
-                                println!("{:3}. New Top Sng Len: {}", &self.line_number, &result);
-                                self.settings.top_songs_len = result;
-                                self.line_number += 1;
-                                None
+                            let int_result = self.parse_int();
+                            match int_result {
+                                Ok(number) => {
+                                    println!("{:3}. New Top Sng Len: {}", &self.line_number, &number);
+                                    self.settings.top_songs_len = number;
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         Token::TopAlbLen => {
-                            if let Ok(result) = self.parse_int() {
-                                println!("{:3}. New Top Alb Len: {}", &self.line_number, &result);
-                                self.settings.top_albums_len = result;
-                                self.line_number += 1;
-                                None
+                            let int_result = self.parse_int();
+                            match int_result {
+                                Ok(number) => {
+                                    println!("{:3}. New Top Alb Len: {}", &self.line_number, &number);
+                                    self.settings.top_albums_len = number;
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         Token::TopArtLen => {
-                            if let Ok(result) = self.parse_int() {
-                                println!("{:3}. New Top Art Len: {}", &self.line_number, &result);
-                                self.settings.top_artists_len = result;
-                                self.line_number += 1;
-                                None
+                            let int_result = self.parse_int();
+                            match int_result {
+                                Ok(number) => {
+                                    println!("{:3}. New Top Art Len: {}", &self.line_number, &number);
+                                    self.settings.top_artists_len = number;
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         Token::TopDecay => {
-                            if let Ok(result) = self.parse_float() {
-                                println!("{:3}. New Top Decay Rate: {}", &self.line_number, &result);
-                                self.settings.top_decay = result;
-                                self.line_number += 1;
-                                None
+                            let float_result = self.parse_float();
+                            match float_result {
+                                Ok(number) => {
+                                    println!("{:3}. New Top Decay Rate: {}", &self.line_number, &number);
+                                    self.settings.top_decay = number;
+                                    self.line_number += 1;
+                                    None
+                                },
+                                Err(message) => {
+                                    Some(Status::LineError(message))
+                                },
                             }
-                            else { Some(Status::LineError) }
                         },
                         // empty line
                         Token::EndL => {
@@ -141,22 +191,22 @@ impl Parser<'_> {
                             None
                         }
                         _ => {
-                            Some(Status::LineError)
+                            Some(Status::LineError("Unexpected Token While Parsing Start of Line".to_string()))
                         }
                     }
                 }
                 else { 
-                    Some(Status::LineError)
+                    Some(Status::LineError("Unexpected End of File While Parsing Line".to_string()))
                 }
             },
             _ => {
-                Some(Status::LineError)
+                Some(Status::LineError("Unexpected Rule While Parsing Line".to_string()))
             },
         }
     }
 
-    fn parse_path(&mut self) -> Result<Vec<String>, ()> {
-        if let Err(()) = self.parse_asn() { return Err(()) }
+    fn parse_path(&mut self) -> Result<Vec<String>, String> {
+        if let Err(message) = self.parse_asn() { return Err(message) }
 
         self.stack.push(Rule::Char);
 
@@ -194,7 +244,7 @@ impl Parser<'_> {
                             }
                             // move to parsing path segments as elements of a list
                             Token::OpenSquare => {
-                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                if let Err(message) = self.parse_clear_garbage() { return Err(message) }
                                 self.stack.push(Rule::Char);
                                 self.stack.push(Rule::CloseSquare);
                             }
@@ -203,18 +253,20 @@ impl Parser<'_> {
                                 self.stack.push(Rule::Char);
                                 self.stack.push(Rule::CloseCurl);
                                 let math_return = self.parse_math();
-                                if let Ok(math) = math_return {
-                                    let mut new_paths = vec![];
-                                    for path in paths {
-                                        for number in &math {
-                                            let string_number = number.to_string();
-                                            let new_path = path.clone() + &string_number;
-                                            new_paths.push(new_path);
+                                match math_return {
+                                    Ok(math) => {
+                                        let mut new_paths = vec![];
+                                        for path in paths {
+                                            for number in &math {
+                                                let string_number = number.to_string();
+                                                let new_path = path.clone() + &string_number;
+                                                new_paths.push(new_path);
+                                            }
                                         }
+                                        paths = new_paths;
                                     }
-                                    paths = new_paths;
+                                    Err(message) => { return Err(message) }
                                 }
-                                else { return Err(()) }
                             }
                             // anything else is a path character and should have its lexime added
                             _ => {
@@ -228,7 +280,7 @@ impl Parser<'_> {
                             }
                         }
                     }
-                    else { return Err(()) }
+                    else { return Err("Unexpected End of File While Parsing Path".to_string()) }
                 },
                 // just add lexime to path
                 Some(Rule::EscapedChar) => {
@@ -250,7 +302,7 @@ impl Parser<'_> {
                             // the end of a line cannot appear in a list
                             //  NOTE may just increment line count to allow lists to be split over
                             //  multiple lines
-                            Token::EndL => { return Err(()) }
+                            Token::EndL => { self.tokens.push_front(lexical_unit); return Err("Unexpected New-Line in Path List".to_string()) }
                             Token::Esc => {
                                 self.stack.push(Rule::CloseSquareEscaped);
                             }
@@ -265,15 +317,15 @@ impl Parser<'_> {
                             }
                             Token::OpenSquare => {
                                 not_comma = false;
-                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                if let Err(message) = self.parse_clear_garbage() { return Err(message) }
                                 self.stack.push(Rule::CloseSquare);
                             }
                             Token::Comma => {
                                 // simplify readability by combining the rules for lists
                                 //  allowing commas and disallowing
-                                if not_comma { return Err(()) }
+                                if not_comma { return Err("Consecutive Commas in Path List".to_string()) }
                                 pos_ws.clear();
-                                if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+                                if let Err(message) = self.parse_clear_garbage() { return Err(message) }
                                 list_items.append(&mut list_item);
                                 list_item = vec!["".to_string()];
                                 not_comma = true;
@@ -296,25 +348,27 @@ impl Parser<'_> {
                                     list_items.clear();
                                     list_item = vec!["".to_string()];
                                 }
-                                else { if let Err(()) = self.parse_clear_garbage() { return Err(()) } }
+                                else { if let Err(message) = self.parse_clear_garbage() { return Err(message) } }
                             },
                             Token::OpenCurl => {
                                 not_comma = false;
                                 self.stack.push(Rule::CloseSquare);
                                 self.stack.push(Rule::CloseCurl);
                                 let math_return = self.parse_math();
-                                if let Ok(math) = math_return {
-                                    let mut new_list_items = vec![];
-                                    for list_item in list_items {
-                                        for number in &math {
-                                            let string_number = number.to_string();
-                                            let new_path = list_item.clone() + &string_number;
-                                            new_list_items.push(new_path);
+                                match math_return {
+                                    Ok(math) => {
+                                        let mut new_list_items = vec![];
+                                        for list_item in list_items {
+                                            for number in &math {
+                                                let string_number = number.to_string();
+                                                let new_path = list_item.clone() + &string_number;
+                                                new_list_items.push(new_path);
+                                            }
                                         }
-                                    }
-                                    list_items = new_list_items;
+                                        list_items = new_list_items;
+                                    },
+                                    Err(message) => { return Err(message) },
                                 }
-                                else { return Err(()) }
                             }
                             _ => {
                                 not_comma = false;
@@ -328,7 +382,7 @@ impl Parser<'_> {
                             }
                         }
                     }
-                    else { return Err(()) }
+                    else { return Err("Unexpected End of File While Parsing Path".to_string()) }
                 },
                 Some(Rule::CloseSquareEscaped) => {
                     if let Some(lexical_unit) = self.tokens.pop_front() {
@@ -342,36 +396,40 @@ impl Parser<'_> {
                         pos_ws.clear();
                     }
                 },
-                _ => { return Err(()) }
+                _ => { return Err("Unexpected End of File While Parsing Path".to_string()) }
             }
         }
     }
-    // TODO change these to automatically be in a math block
-    fn parse_int(&mut self) -> Result<i32, ()> {
-        if let Err(()) = self.parse_asn() { return Err(())}
+
+    fn parse_int(&mut self) -> Result<i32, String> {
+        if let Err(message) = self.parse_asn() { return Err(message)}
         let int;
         self.stack.push(Rule::CloseMath);
-        if let Ok(result) = self.parse_math() {
-            int = result[result.len()-1] as i32;
+        match self.parse_math() {
+            Ok(number) => {
+                int = number[number.len()-1] as i32;
+            },
+            Err(message) => { return Err(message) },
         }
-        else { return Err(()) }
-        if let Err(()) = self.parse_to_endl() { return Err(()) }
+        if let Err(message) = self.parse_to_endl() { return Err(message) }
         Ok(int)
     }
-    fn parse_float(&mut self) -> Result<f64, ()> {
-        if let Err(()) = self.parse_asn() { return Err(())}
+    fn parse_float(&mut self) -> Result<f64, String> {
+        if let Err(message) = self.parse_asn() { return Err(message)}
         let float;
         self.stack.push(Rule::CloseMath);
-        if let Ok(result) = self.parse_math() {
-            float = result[result.len()-1];
+        match self.parse_math() {
+            Ok(number) => {
+                float = number[number.len()-1];
+            },
+            Err(message) => { return Err(message) },
         }
-        else { return Err(()) }
-        if let Err(()) = self.parse_to_endl() { return Err(()) }
+        if let Err(message) = self.parse_to_endl() { return Err(message) }
         Ok(float)
     }
 
-    //  lines: 290 - 523 |NOTE| keep up to date
-    fn parse_math(&mut self) -> Result<Vec<f64>, ()> {
+    //  lines: 422 - 702 |NOTE| keep up to date
+    fn parse_math(&mut self) -> Result<Vec<f64>, String> {
         self.stack.push(Rule::Term);
 
         // operators
@@ -389,7 +447,7 @@ impl Parser<'_> {
         let mut level_len = 1;
         loop {
             // remove any comments or white space between terms
-            if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+            if let Err(message) = self.parse_clear_garbage() { return Err(message) }
             // get rule
             let rule = self.stack.pop();
             match rule {
@@ -401,27 +459,35 @@ impl Parser<'_> {
                         match lexical_unit.get_token() {
                             // number term (may have decimal that is parsed by parse_num)
                             Token::Num => {
-                                if let Ok(result) = self.parse_num() {
-                                    number.push_str(&result);
-                                    if let Ok(parsed_number) = number.parse::<f64>() { 
-                                        term_stack.push(parsed_number);
-                                        term_len_stack.push(0);
-                                    }
-                                    else { return Err(()) }
+                                match self.parse_num() {
+                                    Ok(result) => {
+                                        number.push_str(&result);
+                                        match number.parse::<f64>() {
+                                            Ok(parsed_number) => { 
+                                                term_stack.push(parsed_number);
+                                                term_len_stack.push(0);
+                                            },
+                                            Err(message) => { return Err(message.to_string()) }
+                                        }
+                                    },
+                                    Err(message) => { return Err(message) }
                                 }
-                                else { return Err(()) }
                             },
                             // decimal term
                             Token::Dot => {
-                                if let Ok(result) = self.parse_decimal() {
-                                    number.push_str(&result);
-                                    if let Ok(parsed_number) = number.parse::<f64>() { 
-                                        term_stack.push(parsed_number);
-                                        term_len_stack.push(0);
-                                    }
-                                    else { return Err(()) }
+                                match self.parse_decimal() {
+                                    Ok(result) => {
+                                        number.push_str(&result);
+                                        match number.parse::<f64>() {
+                                            Ok(parsed_number) => { 
+                                                term_stack.push(parsed_number);
+                                                term_len_stack.push(0);
+                                            },
+                                            Err(message) => { return Err(message.to_string()) }
+                                        }
+                                    },
+                                    Err(message) => { return Err(message) }
                                 }
-                                else { return Err(()) }
                             },
                             // negative term
                             Token::Dash => {
@@ -453,7 +519,7 @@ impl Parser<'_> {
                                 self.stack.push(Rule::CloseParen);
                                 self.stack.push(Rule::Term);
                             },
-                            _ => { return Err(()) }
+                            _ => { return Err("Unexpected Token While Parsing Math Term".to_string()) }
                         }
                     }
                 },
@@ -462,29 +528,32 @@ impl Parser<'_> {
                     let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
                     // if the result is valid push it to the stack
                     //  5 + (2 * 3) -> 5 + 6
-                    if let Ok(level_stack) = level_result {
-                        let len = level_stack.len();
-                        for term in level_stack {
-                            term_stack.push(term);
-                            term_len_stack.push(0);
+                    match level_result {
+                        Ok(level_stack) => {
+                            let len = level_stack.len();
+                            for term in level_stack {
+                                term_stack.push(term);
+                                term_len_stack.push(0);
+                            }
+                            if len > 1 {
+                                term_len_stack.push(len);
+                            }
                         }
-                        if len > 1 {
-                            term_len_stack.push(len);
-                        }
+                        Err(message) => { return Err(message) }
                     }
                     if let Some(len) = term_len_stack.pop() {
                         if len == 0 && term_stack.len() != 1 {
-                            return Err(())
+                            return Err("Unexpected Term List When Returning From Math".to_string())
                         }
                         if len != 0 && term_stack.len() != len {
-                            return Err(())
+                            return Err("Unexpected Number of Terms in List When Returning From Math".to_string())
                         }
                         if op_stack.len() != 0 {
-                            return Err(())
+                            return Err("Unexpected Operators in Stack When Returning From Math".to_string())
                         }
                         return Ok(term_stack)
                     }
-                    else { return Err(()) }
+                    else { return Err("Unexpected End of Term Len Stack When Returning From Math".to_string()) }
                 },
                 // return from curly brace as a term (may end math block)
                 Some(Rule::CloseCurl) => {
@@ -505,20 +574,23 @@ impl Parser<'_> {
                         }
                         else { 
                             // check that the needed ending bracket matches the token
-                            if lexical_unit.get_token() != Token::CloseCurl { return Err(())}
+                            if lexical_unit.get_token() != Token::CloseCurl { return Err("Unexpected Token When Closing Curly Brace".to_string())}
                             // calculate the value of the bracketed expression
                             let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
                             // if the result is valid push it to the stack
                             //  5 + (2 * 3) -> 5 + 6
-                            if let Ok(level_stack) = level_result {
-                                let len = level_stack.len();
-                                for term in level_stack {
-                                    term_stack.push(term);
-                                    term_len_stack.push(0);
+                            match level_result {
+                                Ok(level_stack) => {
+                                    let len = level_stack.len();
+                                    for term in level_stack {
+                                        term_stack.push(term);
+                                        term_len_stack.push(0);
+                                    }
+                                    if len > 1 {
+                                        term_len_stack.push(len);
+                                    }
                                 }
-                                if len > 1 {
-                                    term_len_stack.push(len);
-                                }
+                                Err(message) => { return Err(message) }
                             }
                             // get the length of that level's expression
                             if let Some(len) = len_stack.pop() {
@@ -529,21 +601,21 @@ impl Parser<'_> {
                             else {
                                 if let Some(len) = term_len_stack.pop() {
                                     if len == 0 && term_stack.len() != 1 {
-                                        return Err(())
+                                        return Err("Unexpected Term List When Returning From Math".to_string())
                                     }
                                     if len != 0 && term_stack.len() != len {
-                                        return Err(())
+                                        return Err("Unexpected Number of Terms in List When Returning From Math".to_string())
                                     }
                                     if op_stack.len() != 0 {
-                                        return Err(())
+                                        return Err("Unexpected Operators in Stack When Returning From Math".to_string())
                                     }
                                     return Ok(term_stack)
                                 }
-                                else{ return Err(()) }
+                                else { return Err("Unexpected End of Term Len Stack When Returning From Math".to_string()) }
                             }
                         }
                     }
-                    else { return Err(()) }
+                    else { return Err("Unexpected End of File While Parsing Math".to_string()) }
                 },
                 // return from parenthesis as a term
                 Some(Rule::CloseParen) => {
@@ -560,26 +632,29 @@ impl Parser<'_> {
                             op_stack.push(lexical_unit.get_token());
                         }
                         else { 
-                            if lexical_unit.get_token() != Token::CloseParen { return Err(())}
+                            if lexical_unit.get_token() != Token::CloseParen { return Err("Unexpected Token When Closing Parenthesis".to_string())}
                             let level_result = self.calculate_level(&mut term_stack, &mut term_len_stack, &mut op_stack, level_len); 
-                            if let Ok(level_stack) = level_result {
-                                let len = level_stack.len();
-                                for term in level_stack {
-                                    term_stack.push(term);
-                                    term_len_stack.push(0);
+                            match level_result {
+                                Ok(level_stack) => {
+                                    let len = level_stack.len();
+                                    for term in level_stack {
+                                        term_stack.push(term);
+                                        term_len_stack.push(0);
+                                    }
+                                    if len > 1 {
+                                        term_len_stack.push(len);
+                                    }
                                 }
-                                if len > 1 {
-                                    term_len_stack.push(len);
-                                }
+                                Err(message) => { return Err(message) }
                             }
                             if let Some(len) = len_stack.pop() {
                                 level_len = len;
                             }
                             // math block always ends with a close curly
-                            else { return Err(()) }
+                            else { return Err("Unexpected End of Term Len Stack When Closing Parenthesis".to_string()) }
                         }
                     }
-                    else { return Err(()) }
+                    else { return Err("Unexpected End of File While Parsing Math".to_string()) }
                 },
                 Some(Rule::CloseSquare) => {
                     if let Some(lexical_unit) = self.tokens.front() {
@@ -593,7 +668,7 @@ impl Parser<'_> {
                             if let Some(len) = list_len_stack.pop() {
                                 list_len = len;
                             }
-                            else { return Err(()) }
+                            else { return Err("Unexpected End of List Len Stack When Closing Square Bracket".to_string()) }
                         }
                         else {
                             self.stack.push(Rule::CloseSquare);
@@ -601,6 +676,7 @@ impl Parser<'_> {
                             list_len += 1;
                         }
                     }
+                    else { return Err("Unexpected End of File While Parsing Math".to_string()) }
                 },
                 // prevent empty commas [ ..., , ... ]
                 //  while allowing trailing commas [ ..., ]
@@ -612,7 +688,7 @@ impl Parser<'_> {
                             if let Some(len) = list_len_stack.pop() {
                                 list_len = len;
                             }
-                            else { return Err(()) }
+                            else { return Err("Unexpected End of List Len Stack When Closing Square Bracket".to_string()) }
                         }
                         else {
                             self.stack.push(Rule::CloseSquare);
@@ -620,36 +696,35 @@ impl Parser<'_> {
                             list_len += 1;
                         }
                     }
+                    else { return Err("Unexpected End of File While Parsing Math".to_string()) }
                 },
-                None => { return Err(()) },
+                None => { return Err("Unexpected End of Rule Stack While Parsing Math".to_string()) },
                 _ => { 
                     // protection for further lines
                     if let Some(rule) = rule {
                         self.stack.push(rule);
                     }
-                    return Err(()) 
+                    return Err("Unexpected Rule in Rule Stack While Parsing Math".to_string()) 
                 },
             }
         }
     }
-    //  lines: 524 - 848 |NOTE| keep up to date
-    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, ()> {
+    //  lines: 703 - 848 |NOTE| keep up to date
+    fn calculate_level(&mut self, term_stack: &mut Vec<f64>, term_len_stack: &mut Vec<usize>, op_stack: &mut Vec<Token>, level_len: usize) -> Result<Vec<f64>, String> {
         let mut level_op_stack = VecDeque::new();
         let mut level_term_stack = VecDeque::new();
         let mut level_term_len_stack = VecDeque::new();
 
-        if let Ok(_) = self.level_stack_add_term_list(term_stack, &mut level_term_stack, term_len_stack, &mut level_term_len_stack) {}
-        else { return Err(()) }
+        if let Err(message) = self.level_stack_add_term_list(term_stack, &mut level_term_stack, term_len_stack, &mut level_term_len_stack) { return Err(message) }
 
         // add all terms and ops for expression
         for _ in 1..level_len {
             if let Some(op) = op_stack.pop() {
                 level_op_stack.push_front(op);
             }
-            else { return Err(()) }
+            else { return Err("Unexpected End of Operators While Constructing Level Stack".to_string()) }
 
-            if let Ok(_) = self.level_stack_add_term_list(term_stack, &mut level_term_stack, term_len_stack, &mut level_term_len_stack) {}
-            else { return Err(()) }
+            if let Err(message) = self.level_stack_add_term_list(term_stack, &mut level_term_stack, term_len_stack, &mut level_term_len_stack) { return Err(message) }
         }
 
         // perform level math
@@ -668,19 +743,22 @@ impl Parser<'_> {
                             if term == -1.0 {
                                 term_one.push(-1.0);
                             }
-                            else { return Err(()) }
+                            else { return Err("Unexpected Term While Performing Negative Mult".to_string()) }
                         }
-                        else { return Err(()) }
+                        else { return Err("Unexpected End of Level Term Stack While Performing Negative Mult".to_string()) }
                     }
+                    else { return Err("Unexpected Term Len While Performing Negative Mult".to_string()) }
                 }
-                else { return Err(()) }
+                else { return Err("Unexpected End of Level Term Len Stack While Performing Negative Mult".to_string()) }
 
                 // build term two
                 let term_two;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_two = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_two = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
 
                 // perform operation on all elements
@@ -693,10 +771,12 @@ impl Parser<'_> {
             }
             else { 
                 let unused_term;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    unused_term = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        unused_term = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let len = unused_term.len();
                 if len > 1 { output_term_lens.push_back(len); }
@@ -733,16 +813,20 @@ impl Parser<'_> {
         while let Some(op) = level_op_stack.pop_front() {
             if op == Token::Carrot {
                 let term_one;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_one = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_one = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let term_two;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_two = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_two = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 // perform operation
                 let len = term_one.len() * term_two.len();
@@ -756,10 +840,12 @@ impl Parser<'_> {
             }
             else {
                 let unused_term;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    unused_term = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        unused_term = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let len = unused_term.len();
                 if len > 1 { output_term_lens.push_back(len); }
@@ -796,16 +882,20 @@ impl Parser<'_> {
         while let Some(op) = level_op_stack.pop_front() {
             if [Token::Star, Token::Slash, Token::Percent].contains(&op) {
                 let term_one;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_one = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_one = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let term_two;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_two = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_two = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 // perform operation
                 let len = term_one.len() * term_two.len();
@@ -837,10 +927,12 @@ impl Parser<'_> {
             }
             else {
                 let unused_term;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    unused_term = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        unused_term = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let len = unused_term.len();
                 if len > 1 { output_term_lens.push_back(len); }
@@ -877,16 +969,20 @@ impl Parser<'_> {
         while let Some(op) = level_op_stack.pop_front() {
             if op == Token::Plus || op == Token::Dash {
                 let term_one;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_one = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_one = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let term_two;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    term_two = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        term_two = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 // perform operation
                 let len = term_one.len() * term_two.len();
@@ -910,10 +1006,12 @@ impl Parser<'_> {
             }
             else {
                 let unused_term;
-                if let Ok(term) = self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
-                    unused_term = term;
+                match self.build_list_term(&mut level_term_stack, &mut level_term_len_stack) {
+                    Ok(term) =>  {
+                        unused_term = term;
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { return Err(()) }
 
                 let len = unused_term.len();
                 if len > 1 { output_term_lens.push_back(len); }
@@ -945,19 +1043,19 @@ impl Parser<'_> {
 
         if let Some(len) = level_term_len_stack.pop_front() {
             if len == 0 && level_term_stack.len() != 1 {
-                return Err(())
+                return Err("Unexpected Term List When Returning From Calculate Level".to_string())
             }
             if len != 0 && level_term_stack.len() != len {
-                return Err(())
+                return Err("Unexpected Number of Terms in List When Returning From Calculate Level".to_string())
             }
             if level_op_stack.len() != 0 {
-                return Err(())
+                return Err("Unexpected Operators in Stack When Returning From Calculate Level".to_string())
             }
             Ok(level_term_stack.into())
         }
-        else { Err(()) }
+        else { Err("Unexpected End of Term Len Stack When Returning From Calculate Level".to_string()) }
     }
-    fn level_stack_add_term_list(&mut self, term_stack: &mut Vec<f64>, level_term_stack: &mut VecDeque<f64>, term_len_stack: &mut Vec<usize>, level_term_len_stack: &mut VecDeque<usize>) -> Result<(), ()> {
+    fn level_stack_add_term_list(&mut self, term_stack: &mut Vec<f64>, level_term_stack: &mut VecDeque<f64>, term_len_stack: &mut Vec<usize>, level_term_len_stack: &mut VecDeque<usize>) -> Result<(), String> {
         let mut current_term_len_stack = vec![];
         let mut current_term_len = 0;
         let mut remaining_len_stack = vec![];
@@ -971,7 +1069,7 @@ impl Parser<'_> {
                 if let Some(term) = term_stack.pop() {
                     level_term_stack.push_front(term);
                 }
-                else { return Err(()) }
+                else { return Err("Unexpected End of Term Stack While Constructing Level Term".to_string()) }
             }
             // first term is a list
             else {
@@ -990,7 +1088,7 @@ impl Parser<'_> {
                             if let Some(term) = term_stack.pop() {
                                 level_term_stack.push_front(term);
                             }
-                            else { return Err(()) }
+                            else { return Err("Unexpected End of Term Stack While Constructing Level List Term".to_string()) }
                         }
                         // sub-list term item
                         else {
@@ -1000,7 +1098,7 @@ impl Parser<'_> {
                             remaining_len = current_term_len;
                         }
                     }
-                    else { return Err(()) }
+                    else { return Err("Unexpected End of Term Len Stack While Constructing Level List Term".to_string()) }
                     // return from added sub-lists
                     while remaining_len == 0 {
                         level_term_len_stack.push_front(current_term_len);
@@ -1013,62 +1111,64 @@ impl Parser<'_> {
                                 if let Some(sub_len) = level_term_len_stack.pop_front() {
                                     current_term_len += sub_len - 1;
                                 }
-                                else { return Err(()) }
+                                else { return Err("Unexpected End of Level Term Len Stack While Constructing Level List Term".to_string()) }
                             }
                         }
-                        else { return Err(()) }
+                        else { return Err("Unexpected End of Current Term Len Stack While Constructing Level List Term".to_string()) }
                         if let Some(len) = remaining_len_stack.pop() {
                             remaining_len = len;
                         }
-                        else { return Err(()) }
+                        else { return Err("Unexpected End of Remaining Len Stack While Constructing Level List Term".to_string()) }
                     }
                     // break from outer loop after fully adding list
                     if current_term_len == 0 { break }
                 }
             }
         }
-        else { return Err(()) }
+        else { return Err("Unexpected End of Term Len Stack While Constructing Level Term".to_string()) }
         Ok(())
     }
-    fn build_list_term(&self, level_term_stack: &mut VecDeque<f64>, level_term_len_stack: &mut VecDeque<usize>) -> Result<Vec<f64>, ()> {
+    fn build_list_term(&self, level_term_stack: &mut VecDeque<f64>, level_term_len_stack: &mut VecDeque<usize>) -> Result<Vec<f64>, String> {
         let mut term = vec![];
         if let Some(len) = level_term_len_stack.pop_front() {
             if len == 0 {
                 if let Some(element) = level_term_stack.pop_front() {
                     term.push(element);
                 }
-                else { return Err(()) }
+                else { return Err("Unexpected End of Level Term Stack While Constructing Term".to_string()) }
             }
             else{
                 for _ in 0..len {
                     if let Some(element) = level_term_stack.pop_front() {
                         term.push(element);
                     }
-                    else { return Err(()) }
-                    if let None = level_term_len_stack.pop_front() { return Err(()) }
+                    else { return Err("Unexpected End of Level Term Stack While Constructing List Term".to_string()) }
+                    if let None = level_term_len_stack.pop_front() { return Err("Unexpected End of Level Term Len Stack While Constructing List Term".to_string()) }
                 }
             }
         }
-        else { return Err(()) }
+        else { return Err("Unexpected End of Level Term Len Stack While Constructing Term".to_string()) }
         Ok(term)
     }
-    fn parse_num(&mut self) -> Result<String, ()> {
+    fn parse_num(&mut self) -> Result<String, String> {
         let mut num = "".to_string();
         if let Some(digit) = self.tokens.front() {
             if digit.get_token() == Token::Dot {
                 self.tokens.pop_front();
                 num.push('.');
-                if let Ok(result) = self.parse_decimal() {
-                    num.push_str(&result);
-                    Ok(num)
+                match self.parse_decimal() {
+                    Ok(result) => {
+                        num.push_str(&result);
+                        Ok(num)
+                    },
+                    Err(message) => { return Err(message) }
                 }
-                else { Err(()) }
             }
             else { Ok(num) }
         }
-        else { Err(()) }
+        else { Err("Unexpected End of File While Parsing Num".to_string()) }
     }
-    fn parse_decimal(&mut self) -> Result<String, ()> {
+    fn parse_decimal(&mut self) -> Result<String, String> {
         let mut num = "".to_string();
         if let Some(digit) = self.tokens.front() {
             if digit.get_token() == Token::Num {
@@ -1079,28 +1179,29 @@ impl Parser<'_> {
             }
             else { Ok(num) }
         }
-        else { Err(()) }
+        else { Err("Unexpected End of File While Parsing Decimal".to_string()) }
     }
 
-    fn parse_asn(&mut self) -> Result<(), ()> {
-        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+    fn parse_asn(&mut self) -> Result<(), String> {
+        if let Err(message) = self.parse_clear_garbage() { return Err(message) }
         if let Some(lexical_unit) = self.tokens.pop_front() {
-            if lexical_unit.get_token() != Token::Asn { return Err(()) }
+            if lexical_unit.get_token() != Token::Asn { return Err("Missing Assignment Token".to_string()) }
         }
-        else { return Err(()) }
-        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+        else { return Err("Unexpected End of File While Parsing Asn".to_string()) }
+        if let Err(message) = self.parse_clear_garbage() { return Err(message) }
         Ok(())
     }
 
-    fn parse_to_endl(&mut self) -> Result<(), ()> {
-        if let Err(()) = self.parse_clear_garbage() { return Err(()) }
+    fn parse_to_endl(&mut self) -> Result<(), String> {
+        if let Err(message) = self.parse_clear_garbage() { return Err(message) }
         if let Some(lexical_unit) = self.tokens.pop_front() {
-            if lexical_unit.get_token() != Token::EndL { return Err(()) }
+            if lexical_unit.get_token() != Token::EndL { return Err("Missing End of Line Token".to_string()) }
         }
+        else { return Err("Unexpected End of File While Parsing EndL".to_string()) }
         Ok(())
     }
 
-    fn parse_clear_garbage(&mut self) -> Result<(), ()> {
+    fn parse_clear_garbage(&mut self) -> Result<(), String> {
         loop {
             if let Some(lexical_unit) = self.tokens.front() {
                 if lexical_unit.get_token() == Token::WhiteSpace { self.tokens.pop_front(); }
@@ -1111,7 +1212,7 @@ impl Parser<'_> {
                 }
                 else { return Ok(()) }
             } 
-            else { return Err(()) }
+            else { return Err("Unexpected End of File While Parsing Garbage".to_string()) }
         }
     }
 
@@ -1122,25 +1223,25 @@ impl Parser<'_> {
                 if lexical_unit.get_token() == Token::EndL { self.line_number += 1; }
                 else if lexical_unit.get_token() == Token::CloseComm { 
                     if let Some(rule) = self.stack.pop() {
-                        if rule != Rule::CloseComm { return Status::LineError }
+                        if rule != Rule::CloseComm { return Status::LineError("Missing Close Comment Rule on Stack".to_string()) }
                     }
-                    else { return Status::LineError }
+                    else { return Status::LineError("Unexpected End of Rule Stack While Parsing Comment".to_string()) }
 
                     if let Some(rule) = self.stack.last() {
                         if rule != &Rule::CloseComm { return Status::Done }
                     }
-                    else { return Status::LineError }
+                    else { return Status::LineError("Unexpected End of Rule Stack While Parsing Comment".to_string()) }
                 }
 
             }
-            else { return Status::LineError }
+            else { return Status::LineError("Unexpected End of File While Parsing Comment".to_string()) }
         }
     }
 }
  
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Status {
-    LineError,
+    LineError(String),
     Done
 }
 

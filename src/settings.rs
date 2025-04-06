@@ -26,20 +26,21 @@ impl Settings {
         if let Some(path) = optional_path { file_path_stack.push(path.to_string()); }
         else { file_path_stack.push("./Longhorn.conf".to_string()); }
         // add way to set custom initial config file in future
+        let mut config_errors = vec![];
+        let empty = "";
         while let Some(path) = file_path_stack.pop() {
             let lexer_result = Lexer::process_file(&path);
             match lexer_result {
                 Ok(lexical_units) => {
                     let len = path.len();
-                    let empty = "";
-                    println!("{}\n{:-<len$}", path, empty);
+                    println!("\n{}\n{:-<len$}", path, empty);
                     let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units);
-                    if let Ok(error_lines) = parser_result {
-                        if error_lines.len() > 0 {
-                            println!("{:-<len$}\nError Lines: {:?}\n", empty, &error_lines);
-                        }
-                        else {
-                            println!("{:-<len$}\nError Lines: NONE\n", empty);
+                    if let Ok(errors) = parser_result {
+                        if errors.len() > 0 {
+                            for error in errors {
+                                let error = error.get_message() + " on Line " + &(error.get_line().to_string()) + " of " + &path;
+                                config_errors.push(error);
+                            }
                         }
                     }
                 },
@@ -47,13 +48,21 @@ impl Settings {
                     match e.kind() {
                         std::io::ErrorKind::NotFound => {
                             println!("No File Found At: {}\n", &path);
+                            let error = "No File Found At ".to_string() + &path;
+                            config_errors.push(error);
                         }
                         _ => {
-                            println!("UNKNOWN ERROR ENCOUNTERED!\n");
+                            println!("UNEXPECTED ERROR ENCOUNTERED!\n");
+                            let error = "UNEXPECTED ERROR ENCOUNTERED IN ".to_string() + &path;
+                            config_errors.push(error);
                         }
                     }
                 },
             }
+        }
+        println!("\nConfig Errors\n{:-<13}", empty);
+        for error in config_errors {
+            println!("{}", error);
         }
     }
 
