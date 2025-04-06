@@ -1,4 +1,5 @@
 use core::f64;
+use itertools::Itertools;
 
 mod lexer;
 use lexer::Lexer;
@@ -35,6 +36,7 @@ impl Settings {
                     let len = path.len();
                     if debug_flag { println!("\n{}\n{:-<len$}", path, empty); }
                     let parser_result = Parser::process_tokens(self, &mut file_path_stack, lexical_units, debug_flag);
+                    file_path_stack = file_path_stack.into_iter().unique().collect();
                     if let Ok(errors) = parser_result {
                         if errors.len() > 0 {
                             for error in errors {
@@ -60,7 +62,7 @@ impl Settings {
         }
         // could add another flag/make debug_flag numeric so only this is displayed
         if debug_flag {
-            println!("\nConfig Errors\n{:-<13}", empty);
+            if config_errors.len() > 0 { println!("\nConfig Errors\n{:-<13}", empty); }
             for error in config_errors {
                 println!("{}", error);
             }
