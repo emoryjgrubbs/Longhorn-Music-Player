@@ -44,7 +44,7 @@ impl Parser<'_> {
                 // advance past tokens in the error line
                 while let Some(lexical_unit) = parser.tokens.pop_front() {
                     // continue to igore comments (comments can allow statements to cross lines)
-                    if lexical_unit.get_token() == Token::OpenComm { parser.parse_comment(); }
+                    if lexical_unit.get_token() == Token::OpenComm { parser.stack.push(Rule::CloseComm); parser.parse_comment(); }
                     if lexical_unit.get_token() == Token::EndL { break }
                 }
             }
@@ -1220,7 +1220,7 @@ impl Parser<'_> {
         loop {
             if let Some(lexical_unit) = self.tokens.pop_front() {
                 if lexical_unit.get_token() == Token::OpenComm { self.stack.push(Rule::CloseComm); }
-                if lexical_unit.get_token() == Token::EndL { self.line_number += 1; }
+                else if lexical_unit.get_token() == Token::EndL { self.line_number += 1; }
                 else if lexical_unit.get_token() == Token::CloseComm { 
                     if let Some(rule) = self.stack.pop() {
                         if rule != Rule::CloseComm { return Status::LineError("Missing Close Comment Rule on Stack".to_string()) }
@@ -1232,7 +1232,6 @@ impl Parser<'_> {
                     }
                     else { return Status::LineError("Unexpected End of Rule Stack While Parsing Comment".to_string()) }
                 }
-
             }
             else { return Status::LineError("Unexpected End of File While Parsing Comment".to_string()) }
         }
