@@ -26,3 +26,6 @@ Longhorn
 # Added by cargo
 
 /target
+
+# test tracks
+test-track-*

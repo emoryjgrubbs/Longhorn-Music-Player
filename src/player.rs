@@ -1,23 +1,68 @@
 use crate::Song;
 use std::{collections::{vec_deque, VecDeque}, vec};
+use soloud::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Player<'a> {
     max_history: i32,
     history_songs: VecDeque<Song<'a>>,
     current_song: Option<Song<'a>>,
     queue_songs: VecDeque<Song<'a>>,
+    buff_tracks: Vec<soloud::audio::Wav>,
+    buff_pos: usize,
+    player: Soloud,
 }
 
 #[allow(dead_code)]
 impl<'q> Player<'q> {
     pub fn new(max_history: i32) -> Player<'q> {
-        Player { max_history, history_songs: VecDeque::new(), current_song: None, queue_songs: VecDeque::new() }
+        let mut new_player = Player { max_history, history_songs: VecDeque::new(), current_song: None, queue_songs: VecDeque::new(),
+            buff_tracks: vec![], buff_pos: 0, player: Soloud::default().expect("failed to open soloud player")
+        };
+
+        // arbitrary number of slots in track buffer
+        //  should be odd, with half being history, half being queue
+        //  and half being the current track
+        //  intention is for buffer to keep enough tracks loaded
+        //  for responsive play back, while keeping memory ussage down
+        for _ in 0..3 {
+            new_player.buff_tracks.push(audio::Wav::default());
+        }
+
+        new_player
     }
 
     // TODO remove this
-    pub fn test_print(&self) {
-        println!("history: {:?}\ncurrent song: {:?}\nqueue: {:?}", self.history_songs, self.current_song, self.queue_songs)
+    pub fn test_play(&mut self) {
+        let test_tracks = vec!["./test-track-four.flac", "./test-track-five.flac", "./test-track-one.flac", "./test-track-two.wav", "./test-track-three.mp3"];
+        for track in test_tracks {
+            print!("playing {} ", track);
+            // TODO have handling incase a track disapears
+            // loads next track to buffer
+            let up_ccoming_pos = (self.buff_pos + 1) % self.buff_tracks.len();
+            if let Err(msg) = self.buff_tracks[up_ccoming_pos].load(&std::path::Path::new(track)) {
+                // TODO handle sl errors properly
+                println!("Encountered error: {}...", msg)
+            }
+
+            // lets current track play
+            //  not fully seamless..
+            while self.player.voice_count() > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            
+            self.buff_pos += 1;
+            self.buff_pos %= self.buff_tracks.len();
+
+            println!("at {} in buff", self.buff_pos);
+            // starts new track playing
+            self.player.play(&self.buff_tracks[self.buff_pos]);
+        }
+
+        // lets last track finish
+        while self.player.voice_count() > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 
     pub fn set_max(&mut self, new_max_history: i32) {

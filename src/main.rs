@@ -31,6 +31,8 @@ fn main() {
 
     let mut player = Player::new(user_settings.history_len());
 
+    player.test_play();
+    /*
     let song_one = Song { title: "track 1", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 1") };
     let song_two = Song { title: "track 2", album: "Album 1", artist: "Artist 1", link: Link::Spotify("Spotify Link 2") };
     let song_three = Song { title: "track 3", album: "Album 2", artist: "Artist 2", link: Link::Spotify("Spotify Link 3") };
@@ -52,4 +54,5 @@ fn main() {
     println!("");
     player.jump_to_song(-1);
     player.test_print();
+    */
 }
