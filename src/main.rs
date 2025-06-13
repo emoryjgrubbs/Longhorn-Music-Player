@@ -63,7 +63,7 @@ impl<'a> App<'a> {
     fn default() -> App<'a> {
         let mut settings = Settings::new();
         settings.read_config(None, false);
-        let player = Player::new(settings.history_len(), 0.1, 9);
+        let player = Player::new(settings.history_len(), 0.1, 3);
         App { settings, player, exit: false }
     }
 

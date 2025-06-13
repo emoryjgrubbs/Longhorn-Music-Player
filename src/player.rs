@@ -181,7 +181,8 @@ impl<'q> Player<'q> {
             }
             // load new song to buffer
             let buff_max_future = self.buff_tracks.len() / 2;
-            if let Some(song) = self.queue_songs.get(buff_max_future) {
+            // doing -1 because a song has already been popped from the queue
+            if let Some(song) = self.queue_songs.get(buff_max_future-1) {
                 if let Link::Local(path) = song.link {
                     let load_pos = (self.buff_pos + buff_max_future).rem_euclid(self.buff_tracks.len());
                     if let Err(_) = self.buff_tracks[load_pos].load(&std::path::Path::new(path)) { todo!() }
@@ -199,13 +200,14 @@ impl<'q> Player<'q> {
             // prevent advancing to a none song
             if let Some(new_song) = self.queue_songs.pop_front() {
                 if let Some(old_song) = self.current_song.clone() {
-                    // advance buffer
                     self.history_songs.push_back(old_song.clone());
+                    // advance buffer
                     self.buff_pos += 1;
                     self.buff_pos = self.buff_pos.rem_euclid(self.buff_tracks.len());
                     // load new song to buffer
                     let buff_max_future = self.buff_tracks.len() / 2;
-                    if let Some(song) = self.queue_songs.get(buff_max_future) {
+                    // doing -1 because a song has already been popped from the queue
+                    if let Some(song) = self.queue_songs.get(buff_max_future-1) {
                         if let Link::Local(path) = song.link {
                             let load_pos = (self.buff_pos + buff_max_future).rem_euclid(self.buff_tracks.len());
                             if let Err(_) = self.buff_tracks[load_pos].load(&std::path::Path::new(path)) { todo!() }
@@ -242,7 +244,7 @@ impl<'q> Player<'q> {
 
             // devance buffer
             self.player.stop_all();
-            self.buff_pos -= 1;
+            self.buff_pos += self.buff_tracks.len() - 1;
             self.buff_pos = self.buff_pos.rem_euclid(self.buff_tracks.len());
             // resume playback
             self.player.play(&self.buff_tracks[self.buff_pos]);
@@ -251,9 +253,12 @@ impl<'q> Player<'q> {
             }
             // load new song to buffer
             let buff_max_past = self.buff_tracks.len() / 2;
-            if let Some(song) = self.queue_songs.get(buff_max_past) {
+            if self.history_songs.len() >= buff_max_past {
+                // NOTE should be safe to just unwrap here, since the none option would be covered
+                //  by the above if comparison
+                let song = self.history_songs.get(self.history_songs.len() - buff_max_past).unwrap();
                 if let Link::Local(path) = song.link {
-                    let load_pos = (self.buff_pos - buff_max_past).rem_euclid(self.buff_tracks.len());
+                    let load_pos = (self.buff_pos + (self.buff_tracks.len() - buff_max_past)).rem_euclid(self.buff_tracks.len());
                     if let Err(_) = self.buff_tracks[load_pos].load(&std::path::Path::new(path)) { todo!() }
                 }
             }
@@ -286,13 +291,14 @@ impl<'q> Player<'q> {
                     }
                     self.current_song = Some(new_song);
                     // devance buffer
-                    self.buff_pos -= 1;
+                    self.buff_pos += self.buff_tracks.len() - 1;
                     self.buff_pos = self.buff_pos.rem_euclid(self.buff_tracks.len());
                     // load new song to buffer
                     let buff_max_past = self.buff_tracks.len() / 2;
-                    if let Some(song) = self.queue_songs.get(buff_max_past) {
+                    if self.history_songs.len() >= buff_max_past {
+                        let song = self.history_songs.get(self.history_songs.len() - buff_max_past).unwrap();
                         if let Link::Local(path) = song.link {
-                            let load_pos = (self.buff_pos - buff_max_past).rem_euclid(self.buff_tracks.len());
+                            let load_pos = (self.buff_pos + (self.buff_tracks.len() - buff_max_past)).rem_euclid(self.buff_tracks.len());
                             if let Err(_) = self.buff_tracks[load_pos].load(&std::path::Path::new(path)) { todo!() }
                         }
                     }
